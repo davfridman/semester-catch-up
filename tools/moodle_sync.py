@@ -7,11 +7,11 @@ Usage: moodle_sync.py [--moodle MOODLE.json] [--dry-run]
 Reads ~/.config/semester-catchup/supabase.local.json ({url, service_key, email}) and the private calendar feed link in
 ~/.config/semester-catchup/moodle-ics-url. Never changes what the student set: done/skipped status, topics, notes.
 """
-import argparse, datetime as dt, json, os, re, sys, urllib.request
+import argparse, datetime as dt, json, os, re, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from supabase_load import req, user_id, CFG  # noqa: E402
+from supabase_load import req, user_id, CFG, SSL  # noqa: E402
 
 ICS_URL_FILE = os.path.expanduser('~/.config/semester-catchup/moodle-ics-url')
 NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
@@ -187,10 +187,21 @@ def main():
                     put(dict(target, note=(note + '\n' if note else 'Other recordings:\n') + url), f'~ {courses[cid]["short"]}: {target["title"]} extra recording')
 
     # calendar feed: deadlines the browser data didn't cover
-    try:
-        ics = urllib.request.urlopen(open(ICS_URL_FILE).read().strip(), timeout=30).read().decode('utf-8')
-    except Exception as e:
-        ics = None; summary.append(f'! Calendar feed failed: {e}')
+    ics, err = None, None
+    feed = open(ICS_URL_FILE).read().strip()
+    for attempt in range(4):  # HUJI's server sometimes resets connections; retry, then fall back to curl
+        try:
+            if attempt < 3:
+                ics = urllib.request.urlopen(urllib.request.Request(feed, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) SemesterCatchUp/1.0'}), timeout=30, context=SSL).read().decode('utf-8')
+            else:
+                ics = subprocess.run(['/usr/bin/curl', '-fsS', '--retry', '3', '--max-time', '40', feed], capture_output=True, text=True, check=True).stdout
+            if 'BEGIN:VCALENDAR' in ics:
+                break
+            ics = None
+        except Exception as e:
+            err = e; time.sleep(2 + attempt * 3)
+    if ics is None:
+        summary.append(f'! Calendar feed failed: {err}')
     if ics:
         groups = {}
         for e in parse_ics(ics):

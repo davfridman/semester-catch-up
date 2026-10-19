@@ -5,16 +5,18 @@ Usage: supabase_load.py DATA.json [--replace]
 Reads ~/.config/semester-catchup/supabase.local.json: {"url": "...", "service_key": "...", "email": "..."}
 The service key never leaves this Mac and is never committed. --replace deletes the user's existing rows first.
 """
-import json, os, sys, urllib.request
+import json, os, ssl, sys, urllib.request
 
 CFG = os.path.expanduser('~/.config/semester-catchup/supabase.local.json')
+# python.org builds of Python ship without CA certificates; use the Mac's own bundle when present.
+SSL = ssl.create_default_context(cafile='/etc/ssl/cert.pem') if os.path.exists('/etc/ssl/cert.pem') else ssl.create_default_context()
 
 
 def req(method, url, key, body=None, extra=None):
     h = {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
     h.update(extra or {})
     r = urllib.request.Request(url, method=method, headers=h, data=json.dumps(body).encode() if body is not None else None)
-    with urllib.request.urlopen(r, timeout=60) as resp:
+    with urllib.request.urlopen(r, timeout=60, context=SSL) as resp:
         txt = resp.read().decode() or 'null'
         return json.loads(txt)
 
