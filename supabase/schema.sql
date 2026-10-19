@@ -2,7 +2,7 @@
 -- One table holds everything as small JSON documents: courses, items (lectures, tasks) and settings.
 create table if not exists public.docs (
   user_id    uuid        not null default auth.uid() references auth.users(id) on delete cascade,
-  col        text        not null check (col in ('course', 'item', 'settings')),
+  col        text        not null check (col in ('course', 'item', 'settings', 'question', 'update', 'note', 'insight')),
   id         text        not null,
   data       jsonb       not null,
   updated_at timestamptz not null default now(),
