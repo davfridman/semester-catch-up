@@ -305,47 +305,64 @@ const docsOf = d => { const m = new Map(); for (const c of d.courses) m.set('cou
 const cacheLocal = () => { try { localStorage.setItem(CACHE, JSON.stringify(data)); localStorage.setItem(LS + '-ui', JSON.stringify(ui)); } catch {} };
 const save = () => { cacheLocal(); if (CLOUD && user) { clearTimeout(pushT); pushT = setTimeout(push, 450); } };
 function showSync(state) { sync = state; const el = document.getElementById('syncline'); if (el) el.innerHTML = syncLabel(); }
-const syncLabel = () => `<span class="syncdot ${sync === 'saving' ? 'saving' : sync === 'offline' ? 'offline' : ''}"></span>${sync === 'saving' ? 'Saving…' : sync === 'offline' ? 'Offline. Changes will sync when you’re back online.' : 'Synced with your iPhone and Mac'}`;
-async function push() {
-  if (!CLOUD || !user || pushing) return;
-  pushing = true; showSync('saving');
-  try {
-    const now = docsOf(data), ups = [], dels = [];
-    for (const [k, v] of now) if (synced.get(k) !== v) ups.push(k);
-    for (const k of synced.keys()) if (!now.has(k)) dels.push(k);
-    for (let i = 0; i < ups.length; i += 400) {
-      const rows = ups.slice(i, i + 400).map(k => { const [col, id] = k.split('\u0000'); return { user_id: user.id, col, id, data: JSON.parse(now.get(k)), updated_at: new Date().toISOString() }; });
-      const { error } = await sb.from('docs').upsert(rows, { onConflict: 'user_id,col,id' });
-      if (error) throw error;
-      ups.slice(i, i + 400).forEach(k => synced.set(k, now.get(k)));
+const syncLabel = () => `<span class="syncdot ${sync === 'saving' ? 'saving' : sync === 'offline' ? 'offline' : ''}"></span>${sync === 'saving' ? 'Saving…' : sync === 'offline' ? `Not saved yet, retrying${lastErr ? ` (${esc(lastErr)})` : ''}` : 'Synced with your iPhone and Mac'}`;
+// The last copy known to be on the server, kept per device so a stale local copy never overwrites newer data.
+const SYNCED_KEY = CACHE + '-synced';
+const saveSynced = () => { try { localStorage.setItem(SYNCED_KEY, JSON.stringify({ uid: user && user.id, docs: [...synced] })); } catch {} };
+const loadSynced = () => { try { const o = JSON.parse(localStorage.getItem(SYNCED_KEY) || 'null'); return o && user && o.uid === user.id ? new Map(o.docs) : null; } catch { return null; } };
+let pushP = null, pushAgain = false, retryT = null, lastErr = '';
+function push() {
+  if (!CLOUD || !user) return Promise.resolve(true);
+  if (pushP) { pushAgain = true; return pushP; }
+  pushP = (async () => {
+    showSync('saving');
+    try {
+      const now = docsOf(data), ups = [], dels = [];
+      for (const [k, v] of now) if (synced.get(k) !== v) ups.push(k);
+      for (const k of synced.keys()) if (!now.has(k)) dels.push(k);
+      for (let i = 0; i < ups.length; i += 400) {
+        const part = ups.slice(i, i + 400);
+        const rows = part.map(k => { const [col, id] = k.split('\u0000'); return { user_id: user.id, col, id, data: JSON.parse(now.get(k)), updated_at: new Date().toISOString() }; });
+        const { error } = await sb.from('docs').upsert(rows, { onConflict: 'user_id,col,id' });
+        if (error) throw error;
+        part.forEach(k => synced.set(k, now.get(k)));
+      }
+      for (const k of dels) { const [col, id] = k.split('\u0000'); const { error } = await sb.from('docs').delete().eq('col', col).eq('id', id); if (error) throw error; synced.delete(k); }
+      saveSynced(); lastErr = ''; showSync('saved');
+      return true;
+    } catch (e) {
+      lastErr = (e && (e.message || e.code)) || String(e);
+      showSync('offline'); toast(`Couldn’t save yet: ${lastErr}. Trying again…`);
+      clearTimeout(retryT); retryT = setTimeout(() => push(), 10000);
+      return false;
     }
-    for (const k of dels) { const [col, id] = k.split('\u0000'); const { error } = await sb.from('docs').delete().eq('col', col).eq('id', id); if (error) throw error; synced.delete(k); }
-    showSync('saved');
-  } catch (e) { showSync('offline'); }
-  finally { pushing = false; }
+  })().finally(() => { pushP = null; if (pushAgain) { pushAgain = false; clearTimeout(pushT); pushT = setTimeout(push, 300); } });
+  return pushP;
 }
 const pending = () => { const now = docsOf(data); if (now.size !== synced.size) return true; for (const [k, v] of now) if (synced.get(k) !== v) return true; return false; };
 async function pull() {
   if (!CLOUD || !user) return;
-  if (pending()) await push();
+  if (pushP) await pushP;
+  if (pending() && !(await push())) return; // keep unsaved changes on screen; never overwrite them with the server copy
   const { data: rows, error } = await sb.from('docs').select('col,id,data').range(0, 9999);
-  if (error) { showSync('offline'); return; }
+  if (error) { lastErr = error.message || ''; showSync('offline'); return; }
+  if (pending()) return; // something changed while loading; the next pull picks up the server copy after it saves
   const d = { courses: [], items: [], prefs: {} };
   for (const r of rows) { if (r.col === 'course') d.courses.push(r.data); else if (r.col === 'item') d.items.push(r.data); else if (r.col === 'settings' && r.id === 'prefs') d.prefs = r.data || {}; }
   d.courses.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
-  data = d; synced = docsOf(d); cacheLocal(); buildWeeks(); showSync('saved'); render();
+  data = d; synced = docsOf(d); saveSynced(); cacheLocal(); buildWeeks(); showSync('saved'); render();
 }
 let channel = null;
 function subscribe() {
   if (channel) sb.removeChannel(channel);
-  channel = sb.channel('docs-' + user.id).on('postgres_changes', { event: '*', schema: 'public', table: 'docs', filter: `user_id=eq.${user.id}` }, () => { clearTimeout(pullT); pullT = setTimeout(() => { if (!pushing) pull(); }, 900); }).subscribe();
+  channel = sb.channel('docs-' + user.id).on('postgres_changes', { event: '*', schema: 'public', table: 'docs', filter: `user_id=eq.${user.id}` }, () => { clearTimeout(pullT); pullT = setTimeout(pull, 900); }).subscribe();
 }
 async function initAuth() {
   if (!CLOUD) return;
   const { data: { session } } = await sb.auth.getSession();
   user = session ? session.user : null;
-  if (user) { synced = new Map(); pull(); subscribe(); }
-  sb.auth.onAuthStateChange((ev, s) => { const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { pull(); subscribe(); } if (!user) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); } render(); });
+  if (user) { synced = loadSynced() || docsOf(data); pull(); subscribe(); }
+  sb.auth.onAuthStateChange((ev, s) => { const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { synced = loadSynced() || docsOf(data); pull(); subscribe(); } if (!user) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); } render(); });
   render();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && CLOUD && user) pull(); });
@@ -656,7 +673,7 @@ const A = {
   undo: () => { const f = undoFn; undoFn = null; $('toast').hidden = true; if (f) f(); },
   signin: async () => { authErr = authMsg = ''; const email = ($('a-email') || {}).value || '', password = ($('a-pass') || {}).value || ''; if (!email || !password) { authErr = 'Enter your email and password.'; render(); return; } const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password }); if (error) { authErr = /confirm/i.test(error.message) ? 'Confirm your email first: open the link Supabase sent you, then sign in.' : 'That email and password don’t match. Try again or create an account.'; render(); } },
   signup: async () => { authErr = authMsg = ''; const email = ($('a-email') || {}).value || '', password = ($('a-pass') || {}).value || ''; if (!email || password.length < 8) { authErr = 'Enter your email and a password of at least 8 characters.'; render(); return; } const { data: res, error } = await sb.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) { authErr = error.message; } else if (!res.session) { authMsg = 'Account created. Open the confirmation link in your email, then come back here and sign in.'; } render(); },
-  signout: async () => { close(); await sb.auth.signOut(); try { localStorage.removeItem(CACHE); } catch {} },
+  signout: async () => { close(); await sb.auth.signOut(); try { localStorage.removeItem(CACHE); localStorage.removeItem(SYNCED_KEY); } catch {} },
   'sync-now': async () => { await push(); await pull(); toast('Synced'); },
 };
 document.addEventListener('click', e => {
