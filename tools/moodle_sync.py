@@ -7,7 +7,7 @@ Usage: moodle_sync.py [--moodle MOODLE.json] [--dry-run]
 Reads ~/.config/semester-catchup/supabase.local.json ({url, service_key, email}) and the private calendar feed link in
 ~/.config/semester-catchup/moodle-ics-url. Never changes what the student set: done/skipped status, topics, notes.
 """
-import argparse, datetime as dt, json, os, re, subprocess, sys, time, urllib.request
+import argparse, datetime as dt, hashlib, json, os, re, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -15,6 +15,7 @@ from supabase_load import req, user_id, CFG, SSL  # noqa: E402
 
 ICS_URL_FILE = os.path.expanduser('~/.config/semester-catchup/moodle-ics-url')
 NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
+STAMP = re.sub(r'\D', '', NOW[:19])
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 
@@ -104,7 +105,7 @@ def main():
             by_moodle[m.group(1)] = cid
         if c.get('code'):
             by_code[str(c['code']).split('_')[0]] = cid
-    changed, summary = {}, []
+    changed, summary, updates = {}, [], {}
 
     def put(it, why):
         cur = items.get(it['id'])
@@ -118,6 +119,11 @@ def main():
             if it == cur:
                 return
         items[it['id']] = it; changed[it['id']] = it; summary.append(why)
+        # One entry per item per run for the app's "What's new" feed.
+        kind = ('recording' if 'recording' in why else 'submitted' if 'marked submitted' in why
+                else 'new' if why.startswith('+') else 'changed')
+        updates[it['id']] = {'id': f"u-{STAMP}-{it['id']}", 'kind': kind, 'text': why[2:], 'item': it['id'],
+                             'course': it.get('c', ''), 'at': NOW, 'seen': False, 'source': 'sync'}
 
     def next_n(cid, typ):
         return 1 + max([x.get('n', 0) for x in items.values() if x['c'] == cid and x['type'] == typ] or [0])
@@ -250,6 +256,11 @@ def main():
 
     if not a.dry_run:
         rows = [{'user_id': uid, 'col': 'item', 'id': i, 'data': it} for i, it in changed.items()]
+        for line in summary:
+            if line.startswith('!'):  # warnings: at most one of each per day
+                wid = f"w-{NOW[:10]}-{hashlib.md5(line.encode()).hexdigest()[:8]}"
+                updates[wid] = {'id': wid, 'kind': 'warning', 'text': line[2:], 'at': NOW, 'seen': False, 'source': 'sync'}
+        rows += [{'user_id': uid, 'col': 'update', 'id': u['id'], 'data': u} for u in updates.values()]
         prefs = next((r['data'] for r in req('GET', f'{base}?user_id=eq.{uid}&col=eq.settings&id=eq.prefs&select=data', cfg['service_key'])), {}) or {}
         rows.append({'user_id': uid, 'col': 'settings', 'id': 'prefs', 'data': dict(prefs, lastSync=NOW)})
         for i in range(0, len(rows), 300):
