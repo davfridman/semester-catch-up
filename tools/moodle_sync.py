@@ -107,6 +107,16 @@ def main():
     changed, summary = {}, []
 
     def put(it, why):
+        cur = items.get(it['id'])
+        if cur is not None:
+            # Fields the user edited in the app ('locked') keep the user's version.
+            for f in cur.get('locked') or []:
+                if f in cur:
+                    it[f] = cur[f]
+                else:
+                    it.pop(f, None)
+            if it == cur:
+                return
         items[it['id']] = it; changed[it['id']] = it; summary.append(why)
 
     def next_n(cid, typ):

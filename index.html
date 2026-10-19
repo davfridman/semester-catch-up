@@ -381,6 +381,10 @@ const curWeek = () => { const t = iso(new Date()); return weeks.find(w => t >= w
 const weekOf = ds => weeks.find(w => ds >= w.ws && ds <= w.we);
 const C = id => data.courses.find(c => c.id === id) || { name: 'General', short: '—' };
 const byId = id => data.items.find(x => x.id === id);
+// Items deleted in the iPhone app are only hidden, as are hidden courses; leave both out of every view.
+const hiddenCourse = c => !!(c && c.profile && c.profile.hidden);
+const courses = () => data.courses.filter(c => !hiddenCourse(c));
+const shown = () => { const off = new Set(data.courses.filter(hiddenCourse).map(c => c.id)); return data.items.filter(it => !it.hidden && !off.has(it.c)); };
 const shortName = it => it.type === 'Online unit' ? (it.title || 'Unit') : WATCH.has(it.type) ? `${SHORT[it.type]}${it.n}` : it.title;
 
 /* ---------- status ---------- */
@@ -433,7 +437,7 @@ function render() {
   if (CLOUD && user && recovering) { $('nav').hidden = true; $('stats').hidden = true; document.body.classList.remove('hasstats'); app.innerHTML = viewNewPassword(); return; }
   if (CLOUD && !user) { $('nav').hidden = true; $('stats').hidden = true; document.body.classList.remove('hasstats'); app.innerHTML = viewAuth(); return; }
   $('nav').hidden = false;
-  const urgent = data.items.filter(it => !WATCH.has(it.type) && state(it).k === 'due').length;
+  const urgent = shown().filter(it => !WATCH.has(it.type) && state(it).k === 'due').length;
   $('nav').innerHTML = Object.keys(NAVN).map(k => `<button type="button" data-action="tab" data-tab="${k}" aria-current="${ui.tab === k ? 'page' : 'false'}">${svg(NAVI[k])}${k === 'home' && urgent ? `<span class="badge">${urgent}</span>` : ''}${NAVN[k]}</button>`).join('');
   const showStats = ui.tab === 'week';
   $('stats').hidden = !showStats; document.body.classList.toggle('hasstats', showStats);
@@ -465,9 +469,9 @@ function viewNewPassword() {
 }
 function viewHome() {
   const today = iso(new Date());
-  const tasks = data.items.filter(it => !WATCH.has(it.type) && openish(it)).sort((a, b) => prioScore(b) - prioScore(a));
-  const opening = data.items.filter(it => !WATCH.has(it.type) && state(it).k === 'open' && it.opens && diffDays(parse(it.opens), new Date()) <= 14).sort((a, b) => a.opens.localeCompare(b.opens));
-  const catchup = data.courses.map(c => ({ c, its: data.items.filter(it => it.c === c.id && WATCH.has(it.type) && openish(it)).sort((a, b) => a.date.localeCompare(b.date)) })).filter(x => x.its.length);
+  const tasks = shown().filter(it => !WATCH.has(it.type) && openish(it)).sort((a, b) => prioScore(b) - prioScore(a));
+  const opening = shown().filter(it => !WATCH.has(it.type) && state(it).k === 'open' && it.opens && diffDays(parse(it.opens), new Date()) <= 14).sort((a, b) => a.opens.localeCompare(b.opens));
+  const catchup = courses().map(c => ({ c, its: shown().filter(it => it.c === c.id && WATCH.has(it.type) && openish(it)).sort((a, b) => a.date.localeCompare(b.date)) })).filter(x => x.its.length);
   const sub = it => [`<span class="cs">${esc(C(it.c).short)}</span>`, it.weight ? `<span>· ${it.weight}% of grade</span>` : `<span>· ${esc(it.type)}</span>`, gate(it) ? '<span>· required</span>' : ''].join('');
   const shown = ui.allTasks ? tasks : tasks.slice(0, 8);
   return `<div class="sec">
@@ -486,7 +490,7 @@ function viewHome() {
 
 function weekItems(w, f) {
   const ev = [];
-  for (const it of data.items) {
+  for (const it of shown()) {
     if (!f(it)) continue;
     if (it.date >= w.ws && it.date <= w.we) ev.push({ it, date: it.date, time: it.time || '', kind: WATCH.has(it.type) ? 'session' : 'due' });
     if (it.opens && it.opens >= w.ws && it.opens <= w.we && state(it).k === 'open') ev.push({ it, date: it.opens, time: it.opensTime || '', kind: 'opens' });
@@ -498,7 +502,7 @@ function viewWeek() {
   if (ui.wc !== 'all' && !data.courses.some(c => c.id === ui.wc)) ui.wc = 'all';
   const f = it => ui.wc === 'all' || it.c === ui.wc;
   const ev = weekItems(sel, f);
-  const carry = sel === cur ? data.items.filter(it => f(it) && it.date < sel.ws && openish(it)).sort((a, b) => a.date.localeCompare(b.date)) : [];
+  const carry = sel === cur ? shown().filter(it => f(it) && it.date < sel.ws && openish(it)).sort((a, b) => a.date.localeCompare(b.date)) : [];
   // stats bar
   const st = { todo: 0, due: 0, open: 0, done: 0, closed: 0 };
   for (const e of ev) { const k = e.kind === 'opens' ? 'open' : state(e.it).k; if (k in st) st[k]++; }
@@ -518,7 +522,7 @@ function viewWeek() {
   return `<div class="wkh" data-swipezone="1"><button type="button" class="round" data-action="week" data-d="-1" aria-label="Previous week" ${sel.n === 1 ? 'disabled' : ''}>${CHEV_L}</button>
     <span class="c"><b>${esc(range(sel.start, sel.end))}</b><span>Week ${sel.n}</span>${sel === cur ? '' : '<button type="button" data-action="week" data-d="0">Back to this week</button>'}</span>
     <button type="button" class="round" data-action="week" data-d="1" aria-label="Next week" ${sel.n === weeks.length ? 'disabled' : ''}>${CHEV_R}</button></div>
-  <div class="chips" role="group" aria-label="Filter by course"><button type="button" data-action="wc" data-id="all" aria-pressed="${ui.wc === 'all'}">All</button>${data.courses.map(c => `<button type="button" data-action="wc" data-id="${esc(c.id)}" aria-pressed="${ui.wc === c.id}">${esc(c.short)}</button>`).join('')}</div>
+  <div class="chips" role="group" aria-label="Filter by course"><button type="button" data-action="wc" data-id="all" aria-pressed="${ui.wc === 'all'}">All</button>${courses().map(c => `<button type="button" data-action="wc" data-id="${esc(c.id)}" aria-pressed="${ui.wc === c.id}">${esc(c.short)}</button>`).join('')}</div>
   <div class="strip">${strip}</div>
   <div class="slidebox" style="display:flex;flex-direction:column;gap:14px">
   ${carry.length ? `<div class="sec"><div class="sech"><h2 style="font-size:15px">From earlier weeks</h2><button type="button" class="lnk" data-action="carry">${ui.carryAll || carry.length <= 3 ? `${carry.length}` : `Show all ${carry.length}`}</button></div><div class="list">${(ui.carryAll ? carry : carry.slice(0, 3)).map(it => pill(it, { sm: true, title: it.title, sub: '', right: `<span class="cs" style="margin-right:6px">${esc(C(it.c).short)}</span><span class="d sx">${esc(dm(it.date))}</span>` })).join('')}</div></div>` : ''}
@@ -529,14 +533,14 @@ function viewWeek() {
 function viewCourses() {
   const cur = curWeek();
   return `<div class="sech"><h2>Courses</h2><button type="button" class="round" style="width:34px;height:34px" data-action="settings" aria-label="Settings">${GEAR}</button></div>
-  <div class="list">${data.courses.map(c => {
-    const its = data.items.filter(it => it.c === c.id), open = its.filter(openish).length, wk = its.filter(it => it.date >= cur.ws && it.date <= cur.we);
+  <div class="list">${courses().map(c => {
+    const its = shown().filter(it => it.c === c.id), open = its.filter(openish).length, wk = its.filter(it => it.date >= cur.ws && it.date <= cur.we);
     return `<button type="button" class="crow" data-action="course" data-id="${esc(c.id)}"><span class="badge">${esc(c.short)}</span>
       <span class="t"><b dir="auto">${esc(c.name)}</b><span class="mini" aria-label="This week">${wk.map(it => `<i class="bg-${state(it).k}"></i>`).join('')}</span></span>
       <span class="r"><b>${open}</b>open</span></button>`; }).join('') || '<p class="empty">No courses yet.</p>'}</div>`;
 }
 function viewCourse(id) {
-  const c = C(id), its = data.items.filter(it => it.c === id).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  const c = C(id), its = shown().filter(it => it.c === id).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   const cur = curWeek(), today = iso(new Date());
   const open = its.filter(openish), coming = its.filter(it => state(it).k === 'open' && !WATCH.has(it.type));
   const nextDue = open.filter(it => !WATCH.has(it.type)).sort((a, b) => a.date.localeCompare(b.date))[0];
