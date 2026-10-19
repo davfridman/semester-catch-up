@@ -296,7 +296,7 @@ const CFG = window.APP_CONFIG || {};
 const CLOUD = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase);
 const sb = CLOUD ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 const CACHE = CLOUD ? 'semester-app-data' : LS;
-let user = null, synced = new Map(), sync = CLOUD ? 'saved' : 'local', pushT = null, pullT = null, pushing = false, authMsg = '', authErr = '';
+let recovering = /type=recovery/.test(location.hash), user = null, synced = new Map(), sync = CLOUD ? 'saved' : 'local', pushT = null, pullT = null, pushing = false, authMsg = '', authErr = '';
 try { data = JSON.parse(localStorage.getItem(CACHE) || 'null'); } catch { data = null; }
 if (!data || !Array.isArray(data.items)) data = CLOUD ? { courses: [], items: [], prefs: {} } : sample();
 if (!data.prefs) data.prefs = {};
@@ -362,7 +362,7 @@ async function initAuth() {
   const { data: { session } } = await sb.auth.getSession();
   user = session ? session.user : null;
   if (user) { synced = loadSynced() || docsOf(data); pull(); subscribe(); }
-  sb.auth.onAuthStateChange((ev, s) => { const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { synced = loadSynced() || docsOf(data); pull(); subscribe(); } if (!user) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); } render(); });
+  sb.auth.onAuthStateChange((ev, s) => { if (ev === 'PASSWORD_RECOVERY') recovering = true; const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { synced = loadSynced() || docsOf(data); pull(); subscribe(); } if (!user) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); } render(); });
   render();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && CLOUD && user) pull(); });
@@ -430,6 +430,7 @@ function pill(it, o = {}) {
 /* ---------- views ---------- */
 function render() {
   const app = $('app');
+  if (CLOUD && user && recovering) { $('nav').hidden = true; $('stats').hidden = true; document.body.classList.remove('hasstats'); app.innerHTML = viewNewPassword(); return; }
   if (CLOUD && !user) { $('nav').hidden = true; $('stats').hidden = true; document.body.classList.remove('hasstats'); app.innerHTML = viewAuth(); return; }
   $('nav').hidden = false;
   const urgent = data.items.filter(it => !WATCH.has(it.type) && state(it).k === 'due').length;
@@ -450,9 +451,18 @@ function viewAuth() {
     ${authErr ? `<p class="msg err">${esc(authErr)}</p>` : ''}${authMsg ? `<p class="msg ok">${esc(authMsg)}</p>` : ''}
     <button type="button" class="bigbtn" data-action="signin">Sign in</button>
     <button type="button" class="bigbtn ghost" data-action="signup">Create account</button>
+    <button type="button" class="lnk" style="align-self:center;padding:6px" data-action="forgot">Forgot password?</button>
     <p class="foot">Only you can see your data. It’s kept in your own Supabase project.</p></section>`;
 }
 
+function viewNewPassword() {
+  return `<section class="auth"><img src="icons/icon-192.png" alt="">
+    <h1>Choose a new password</h1><p>For ${esc(user ? user.email : '')}. You’ll stay signed in on this device.</p>
+    <label class="field"><span>New password</span><input type="password" id="n-pass" autocomplete="new-password" placeholder="At least 8 characters"></label>
+    <label class="field"><span>Repeat it</span><input type="password" id="n-pass2" autocomplete="new-password"></label>
+    ${authErr ? `<p class="msg err">${esc(authErr)}</p>` : ''}
+    <button type="button" class="bigbtn" data-action="set-password">Save new password</button></section>`;
+}
 function viewHome() {
   const today = iso(new Date());
   const tasks = data.items.filter(it => !WATCH.has(it.type) && openish(it)).sort((a, b) => prioScore(b) - prioScore(a));
@@ -673,6 +683,8 @@ const A = {
   undo: () => { const f = undoFn; undoFn = null; $('toast').hidden = true; if (f) f(); },
   signin: async () => { authErr = authMsg = ''; const email = ($('a-email') || {}).value || '', password = ($('a-pass') || {}).value || ''; if (!email || !password) { authErr = 'Enter your email and password.'; render(); return; } const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password }); if (error) { authErr = /confirm/i.test(error.message) ? 'Confirm your email first: open the link Supabase sent you, then sign in.' : 'That email and password don’t match. Try again or create an account.'; render(); } },
   signup: async () => { authErr = authMsg = ''; const email = ($('a-email') || {}).value || '', password = ($('a-pass') || {}).value || ''; if (!email || password.length < 8) { authErr = 'Enter your email and a password of at least 8 characters.'; render(); return; } const { data: res, error } = await sb.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) { authErr = error.message; } else if (!res.session) { authMsg = 'Account created. Open the confirmation link in your email, then come back here and sign in.'; } render(); },
+  forgot: async () => { authErr = authMsg = ''; const email = (($('a-email') || {}).value || '').trim(); if (!email) { authErr = 'Type your email above first, then tap Forgot password.'; render(); return; } const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) authErr = error.message; else authMsg = 'Check your email for a reset link. Open it on this device, then choose a new password.'; render(); },
+  'set-password': async () => { authErr = ''; const a = ($('n-pass') || {}).value || '', b = ($('n-pass2') || {}).value || ''; if (a.length < 8) { authErr = 'Use at least 8 characters.'; render(); return; } if (a !== b) { authErr = 'The two passwords don’t match.'; render(); return; } const { error } = await sb.auth.updateUser({ password: a }); if (error) { authErr = error.message; render(); return; } recovering = false; history.replaceState(null, '', location.pathname); render(); toast('New password saved'); },
   signout: async () => { close(); await sb.auth.signOut(); try { localStorage.removeItem(CACHE); localStorage.removeItem(SYNCED_KEY); } catch {} },
   'sync-now': async () => { await push(); await pull(); toast('Synced'); },
 };
