@@ -42,6 +42,42 @@ def activity_dates(text):
     return res
 
 
+HEB = {'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5, 'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9, 'י': 10, 'כ': 20, 'ל': 30, 'מ': 40, 'נ': 50}
+
+
+def rec_group(title, after):
+    """The group a recording belongs to: "שעור ג" -> "3", "תרגיל יב" -> "12", else the rest of the title ("14-16")."""
+    rest = title[after:].strip()
+    m = re.search(r'(?:שעור|שיעור|תרגיל|תרגול)\s+([א-ת]{1,3})\b', rest)
+    if m and all(ch in HEB for ch in m.group(1)):
+        return str(sum(HEB[ch] for ch in m.group(1)))
+    return re.sub(r'(?:שעור|שיעור|תרגיל|תרגול)', '', rest).strip() or '?'
+
+
+def group_sort(g):
+    return (0, int(g)) if g.isdigit() else (1, g)
+
+
+def pick_link(it, course):
+    """The recording to open: the user's pick for this week, else the course's group for this type, else the current one."""
+    recs = it.get('recordings') or []
+    if not recs:
+        return it.get('link', '')
+    want = it.get('group') or ((course.get('profile') or {}).get('groups') or {}).get(it['type'])
+    if want:
+        hit = [r for r in recs if r['group'] == want]
+        if hit:
+            return hit[0]['url']
+    return it.get('link') or recs[0]['url']
+
+
+def strip_recording_lines(note, uuids):
+    """Removes recording links the sync used to paste into notes, now that they're in the recordings list."""
+    out = [ln for ln in note.split('\n') if not any(u in ln for u in uuids)]
+    out = [ln for i, ln in enumerate(out) if not (ln.rstrip().endswith(':') and (i + 1 == len(out) or not out[i + 1].strip()))]
+    return '\n'.join(out).strip()
+
+
 def clean_title(name):
     return re.sub(r'\s+(Assignment|Quiz)$', '', name or '').strip()
 
@@ -119,6 +155,8 @@ def main():
             if it == cur:
                 return
         items[it['id']] = it; changed[it['id']] = it; summary.append(why)
+        if 'sorted by group' in why:  # reorganising existing recordings isn't news
+            return
         # One entry per item per run for the app's "What's new" feed.
         kind = ('recording' if 'recording' in why else 'submitted' if 'marked submitted' in why
                 else 'new' if why.startswith('+') else 'changed')
@@ -168,18 +206,20 @@ def main():
                     new['status'] = 'done'
                 if new != cur:
                     put(new, f'~ {courses[cid]["short"]}: {cur.get("title")} ' + ('marked submitted' if new['status'] != cur.get('status') else 'dates changed'))
-        # Panopto recordings -> the lecture or tutorial they belong to
-        known = set()
+        # Panopto recordings -> the lecture or tutorial they belong to. Every recording of a session is kept
+        # in item['recordings'] with its group (from the title, e.g. "תרגיל יב" = group 12), and the item's link
+        # points at the group the user picked (item['group'], else the course's profile.groups[type]).
+        owner = {}
         for it in items.values():
-            known.update(re.findall(UUID, (it.get('link') or '') + ' ' + (it.get('note') or '')))
+            for u in re.findall(UUID, it.get('link') or ''):
+                owner.setdefault(u, it['id'])
+            for r in it.get('recordings') or []:
+                owner[r['id']] = it['id']
         for mid, recs in moodle.get('panopto', {}).items():
             cid = by_moodle.get(mid)
             if not cid:
                 continue
             for title, uuid in sorted(recs):
-                if uuid in known:
-                    continue
-                known.add(uuid)
                 m = re.search(r'(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4})', title)
                 if not m:
                     continue
@@ -189,18 +229,31 @@ def main():
                 date = dt.date.fromisoformat(ds)
                 typ = 'Tutorial' if re.search(r'תרגיל|תרגול|recitation|tutorial', title, re.I) else 'Lecture'
                 url = f'https://huji.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id={uuid}&instance=HUJI26'
-                wk0 = date - dt.timedelta(days=jsday(date))
-                same_day = [x for x in items.values() if x['c'] == cid and x['type'] == typ and x['date'] == ds]
-                same_week = sorted([x for x in items.values() if x['c'] == cid and x['type'] == typ and wk0.isoformat() <= x['date'] <= (wk0 + dt.timedelta(days=6)).isoformat()], key=lambda x: x['date'])
-                target = (same_day or same_week or [None])[0]
+                rec = {'id': uuid, 'group': rec_group(title, m.end()), 'date': ds, 'url': url}
+                target = items.get(owner.get(uuid, ''))
                 if target is None:
-                    put({'id': 'p-' + uuid[:8], 'c': cid, 'type': typ, 'n': next_n(cid, typ), 'title': f'{typ} {next_n(cid, typ)}', 'date': ds, 'time': '', 'opens': '',
-                         'weight': None, 'status': 'todo', 'topic': '', 'link': url, 'note': '', 'source': 'panopto'}, f'+ {courses[cid]["short"]}: recording "{title}"')
-                elif not target.get('link'):
-                    put(dict(target, link=url), f'~ {courses[cid]["short"]}: {target["title"]} recording added')
-                else:
-                    note = (target.get('note') or '').rstrip()
-                    put(dict(target, note=(note + '\n' if note else 'Other recordings:\n') + url), f'~ {courses[cid]["short"]}: {target["title"]} extra recording')
+                    wk0 = date - dt.timedelta(days=jsday(date))
+                    same_day = [x for x in items.values() if x['c'] == cid and x['type'] == typ and x['date'] == ds and not x.get('hidden')]
+                    same_week = sorted([x for x in items.values() if x['c'] == cid and x['type'] == typ and not x.get('hidden')
+                                        and wk0.isoformat() <= x['date'] <= (wk0 + dt.timedelta(days=6)).isoformat()], key=lambda x: x['date'])
+                    target = (same_day or same_week or [None])[0]
+                if target is None:
+                    n = next_n(cid, typ)
+                    new = {'id': 'p-' + uuid[:8], 'c': cid, 'type': typ, 'n': n, 'title': f'{typ} {n}', 'date': ds, 'time': '', 'opens': '',
+                           'weight': None, 'status': 'todo', 'topic': '', 'link': url, 'note': '', 'source': 'panopto', 'recordings': [rec]}
+                    owner[uuid] = new['id']
+                    put(new, f'+ {courses[cid]["short"]}: recording "{title}"')
+                    continue
+                owner[uuid] = target['id']
+                cur = items[target['id']]
+                recs_now = [r for r in (cur.get('recordings') or []) if r['id'] != uuid] + [rec]
+                recs_now.sort(key=lambda r: (r['date'], group_sort(r['group']), r['id']))
+                new = dict(cur, recordings=recs_now)
+                new['link'] = pick_link(new, courses[cid])
+                if 'note' not in (cur.get('locked') or []):
+                    new['note'] = strip_recording_lines(cur.get('note') or '', {r['id'] for r in recs_now})
+                had = any(r['id'] == uuid for r in cur.get('recordings') or []) or uuid in (cur.get('link') or '')
+                put(new, f'~ {courses[cid]["short"]}: {cur["title"]} ' + ('recordings sorted by group' if had else 'recording added'))
 
     # calendar feed: deadlines the browser data didn't cover
     ics, err = None, None
