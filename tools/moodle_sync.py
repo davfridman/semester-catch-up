@@ -315,7 +315,13 @@ def main():
                 updates[wid] = {'id': wid, 'kind': 'warning', 'text': line[2:], 'at': NOW, 'seen': False, 'source': 'sync'}
         rows += [{'user_id': uid, 'col': 'update', 'id': u['id'], 'data': u} for u in updates.values()]
         prefs = next((r['data'] for r in req('GET', f'{base}?user_id=eq.{uid}&col=eq.settings&id=eq.prefs&select=data', cfg['service_key'])), {}) or {}
-        rows.append({'user_id': uid, 'col': 'settings', 'id': 'prefs', 'data': dict(prefs, lastSync=NOW)})
+        # When each source last delivered data, so the app can show how fresh the information is.
+        stamps = {'lastSync': NOW}
+        if ics:
+            stamps['lastCalendarSync'] = NOW
+        if moodle and moodle.get('fetchedAt'):
+            stamps['lastMoodleSync'] = moodle['fetchedAt']
+        rows.append({'user_id': uid, 'col': 'settings', 'id': 'prefs', 'data': dict(prefs, **stamps)})
         for i in range(0, len(rows), 300):
             req('POST', base + '?on_conflict=user_id,col,id', cfg['service_key'], rows[i:i + 300], {'Prefer': 'resolution=merge-duplicates,return=minimal'})
     print(f'{len(changed)} changes' + (' (dry run, nothing written)' if a.dry_run else ''))
