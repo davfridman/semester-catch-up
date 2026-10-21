@@ -14,13 +14,18 @@ SSL = ssl.create_default_context(cafile='/etc/ssl/cert.pem') if os.path.exists('
 
 
 def load_cfg():
+    # In a Claude cloud routine the key is added to requests by the environment's network secret,
+    # so the session never holds it: SUPABASE_KEY_VIA_PROXY=1 plus SUPABASE_URL and SUPABASE_USER_ID.
+    if os.environ.get('SUPABASE_KEY_VIA_PROXY'):
+        return {'url': os.environ['SUPABASE_URL'], 'service_key': '', 'email': os.environ.get('SUPABASE_EMAIL', ''),
+                'user_id': os.environ['SUPABASE_USER_ID']}
     if os.environ.get('SUPABASE_SERVICE_KEY'):
         return {'url': os.environ['SUPABASE_URL'], 'service_key': os.environ['SUPABASE_SERVICE_KEY'], 'email': os.environ['SUPABASE_EMAIL']}
     return json.load(open(CFG))
 
 
 def req(method, url, key, body=None, extra=None):
-    h = {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
+    h = {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'} if key else {'Content-Type': 'application/json'}
     h.update(extra or {})
     r = urllib.request.Request(url, method=method, headers=h, data=json.dumps(body).encode() if body is not None else None)
     with urllib.request.urlopen(r, timeout=60, context=SSL) as resp:
@@ -29,6 +34,8 @@ def req(method, url, key, body=None, extra=None):
 
 
 def user_id(cfg):
+    if cfg.get('user_id'):
+        return cfg['user_id']
     users = req('GET', cfg['url'] + '/auth/v1/admin/users?per_page=200', cfg['service_key'])
     users = users.get('users', users) if isinstance(users, dict) else users
     for u in users:
