@@ -6,7 +6,10 @@ lands in the app's "What's new" feed with the reason and an Undo.
   claude_edit.py rule COURSE "what I learned" --why "..."    add a sentence to a course's profile.rules
   claude_edit.py profile COURSE KEY JSON --why "..."         set a course profile key (e.g. trackTutorials false)
   claude_edit.py importance ITEM -1|0|1 --why "..."          nudge a task; skipped if the user set it themselves
-  claude_edit.py insight "text" [--course COURSE]            add one insight to the Overview
+  claude_edit.py insight "text" [--course COURSE] [--about A_ID ...]
+                                                             add one insight to the Overview; --about names the
+                                                             announcements it sums up (the app links back to them)
+  claude_edit.py reviewed A_ID [A_ID ...]                    announcements you read that need no insight
 
 COURSE and ITEM are ids as printed by `summary` (e.g. m-6441, m-169162).
 """
@@ -58,7 +61,19 @@ def summary(s):
             continue
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} {i.get('time', '')}"
               f" | w={i.get('weight')} | {i.get('status', 'todo')} | imp={i.get('myImportance', 0)} | locked={i.get('locked', [])}")
-    recent = sorted(s.get('insight').values(), key=lambda i: i.get('at', ''))[-5:]
+    insights = s.get('insight')
+    covered = {a for i in insights.values() for a in (i.get('about') or [])}
+    covered |= set((s.get('settings', 'claude').get('claude') or {}).get('reviewedAnnouncements') or [])
+    weeks_ago = (dt.datetime.now().astimezone() - dt.timedelta(days=14)).isoformat()
+    news = sorted((u for u in s.get('update').values() if u.get('kind') == 'announcement' and u['id'] not in covered
+                   and u.get('at', '') >= weeks_ago), key=lambda u: u.get('at', ''))
+    print('NEW ANNOUNCEMENTS (not yet summed up; the student reads them in the course tab, not the Overview)')
+    for u in news:
+        body = re.sub(r'\s*\n\s*', ' / ', u.get('detail', ''))
+        print(f"  {u['id']} {courses.get(u.get('course'), {}).get('short')} {u.get('at', '')[:16]} | {u.get('text', '')} | {body}")
+    if not news:
+        print('  none')
+    recent = sorted(insights.values(), key=lambda i: i.get('at', ''))[-5:]
     print('RECENT INSIGHTS (do not repeat these; add one only if it says something new)')
     for i in recent:
         print(f"  {i.get('at', '')[:10]} {i.get('course', '')} | {i.get('text', '')}")
@@ -68,10 +83,11 @@ def summary(s):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight'])
+    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight', 'reviewed'])
     ap.add_argument('args', nargs='*')
     ap.add_argument('--why', default='')
     ap.add_argument('--course', default='')
+    ap.add_argument('--about', nargs='*', default=[])
     a = ap.parse_args()
     s = Store()
 
@@ -83,8 +99,22 @@ def main():
         if a.course and not a.course.startswith('m-'):  # accept a short name like COMP
             match = [cid for cid, c in s.get('course').items() if (c.get('short') or '').lower() == a.course.lower()]
             a.course = match[0] if match else a.course
-        s.put('insight', [{'id': f'i-{STAMP}', 'text': text, 'course': a.course, 'at': NOW, 'source': 'claude'}])
+        doc = {'id': f'i-{STAMP}', 'text': text, 'course': a.course, 'at': NOW, 'source': 'claude'}
+        if a.about:
+            updates = s.get('update')
+            missing = [x for x in a.about if x not in updates]
+            assert not missing, f'unknown announcement ids: {missing}'
+            doc['about'] = a.about
+            if not a.course:
+                doc['course'] = updates[a.about[0]].get('course', '')
+        s.put('insight', [doc])
         return print('Insight added.')
+
+    if a.cmd == 'reviewed':
+        cur = s.get('settings', 'claude').get('claude') or {'id': 'claude'}
+        done = list(dict.fromkeys((cur.get('reviewedAnnouncements') or []) + a.args))[-300:]
+        s.put('settings', [dict(cur, id='claude', reviewedAnnouncements=done)])
+        return print(f'{len(a.args)} announcement(s) marked as read.')
 
     assert a.why, '--why is required: say what you changed and because of what, in one plain sentence'
     if a.cmd in ('rule', 'profile'):

@@ -78,7 +78,7 @@ def when(ts):
     return dt.datetime.fromtimestamp(ts).strftime('%d %B %Y, %H:%M') if ts else ''
 
 
-def text(html_s, n=400):
+def text(html_s, n=3000):
     s = re.sub(r'<br\s*/?>|</p>|</div>|</li>', '\n', html_s or '', flags=re.I)
     s = html.unescape(re.sub(r'<[^>]+>', '', s))
     s = re.sub(r'\n\s*\n+', '\n', s).strip()

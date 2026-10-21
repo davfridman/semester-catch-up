@@ -176,6 +176,7 @@ def main():
             summary.append('! Moodle sign-in has expired, so only the calendar feed was used. Sign in to Moodle in the Claude app browser.')
         moodle = None
     seen_updates = {r['id'] for r in rows if r['col'] == 'update'}
+    update_docs = {r['id']: r['data'] for r in rows if r['col'] == 'update'}
     claimed = set()
     if moodle:
         for mid, name in moodle.get('courses', {}).items():
@@ -273,6 +274,9 @@ def main():
                 continue
             for did, subject, body, ts, link in posts:
                 uid_ = f'a-{mid}-{did}'
+                cur = update_docs.get(uid_)
+                if cur and len(body) > len(cur.get('detail') or ''):
+                    updates[uid_] = dict(cur, detail=body)  # the full text, for posts first saved shortened
                 if uid_ in seen_updates or (ts or 0) < recent:
                     continue
                 updates[uid_] = {'id': uid_, 'kind': 'announcement', 'text': f'{courses[cid]["short"]}: {subject}', 'detail': body,
