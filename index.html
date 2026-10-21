@@ -317,9 +317,10 @@ function push() {
   pushP = (async () => {
     showSync('saving');
     try {
-      const now = docsOf(data), ups = [], dels = [];
-      for (const [k, v] of now) if (synced.get(k) !== v) ups.push(k);
-      for (const k of synced.keys()) if (!now.has(k)) dels.push(k);
+      // Sync only ever adds or updates rows. Nothing is deleted from the server here: the app hides items instead,
+      // and a device that lost its data must never be able to wipe everyone else's copy.
+      const now = docsOf(data), ups = [];
+      for (const [k, v] of now) if (synced.get(k) !== v && !(k === 'settings\u0000prefs' && v === '{}')) ups.push(k);
       for (let i = 0; i < ups.length; i += 400) {
         const part = ups.slice(i, i + 400);
         const rows = part.map(k => { const [col, id] = k.split('\u0000'); return { user_id: user.id, col, id, data: JSON.parse(now.get(k)), updated_at: new Date().toISOString() }; });
@@ -327,7 +328,6 @@ function push() {
         if (error) throw error;
         part.forEach(k => synced.set(k, now.get(k)));
       }
-      for (const k of dels) { const [col, id] = k.split('\u0000'); const { error } = await sb.from('docs').delete().eq('col', col).eq('id', id); if (error) throw error; synced.delete(k); }
       saveSynced(); lastErr = ''; showSync('saved');
       return true;
     } catch (e) {
@@ -339,7 +339,10 @@ function push() {
   })().finally(() => { pushP = null; if (pushAgain) { pushAgain = false; clearTimeout(pushT); pushT = setTimeout(push, 300); } });
   return pushP;
 }
-const pending = () => { const now = docsOf(data); if (now.size !== synced.size) return true; for (const [k, v] of now) if (synced.get(k) !== v) return true; return false; };
+const pending = () => { for (const [k, v] of docsOf(data)) if (synced.get(k) !== v && !(k === 'settings\u0000prefs' && v === '{}')) return true; return false; };
+// The saved snapshot only describes the data on this device if that data is here. Empty data starts from the server copy.
+const isEmpty = d => !d.courses.length && !d.items.length;
+const startSync = () => { synced = isEmpty(data) ? docsOf(data) : (loadSynced() || docsOf(data)); };
 async function pull() {
   if (!CLOUD || !user) return;
   if (pushP) await pushP;
@@ -361,8 +364,8 @@ async function initAuth() {
   if (!CLOUD) return;
   const { data: { session } } = await sb.auth.getSession();
   user = session ? session.user : null;
-  if (user) { synced = loadSynced() || docsOf(data); pull(); subscribe(); }
-  sb.auth.onAuthStateChange((ev, s) => { if (ev === 'PASSWORD_RECOVERY') recovering = true; const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { synced = loadSynced() || docsOf(data); pull(); subscribe(); } if (!user) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); } render(); });
+  if (user) { startSync(); pull(); subscribe(); }
+  sb.auth.onAuthStateChange((ev, s) => { if (ev === 'PASSWORD_RECOVERY') recovering = true; const was = user && user.id; user = s ? s.user : null; if (user && user.id !== was) { startSync(); pull(); subscribe(); } if (!user && was) { data = { courses: [], items: [], prefs: {} }; synced = new Map(); try { localStorage.removeItem(SYNCED_KEY); } catch {} } render(); });
   render();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && CLOUD && user) pull(); });
