@@ -18,7 +18,7 @@ drop policy if exists "docs: owner deletes" on public.docs;
 create policy "docs: owner reads"   on public.docs for select using (auth.uid() = user_id);
 create policy "docs: owner inserts" on public.docs for insert with check (auth.uid() = user_id);
 create policy "docs: owner updates" on public.docs for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "docs: owner deletes" on public.docs for delete using (auth.uid() = user_id);
+-- No delete policy: the apps hide items instead of deleting them (see migrations/003_no_deletes.sql).
 
 -- Live updates between your iPhone and Mac.
 do $$ begin
