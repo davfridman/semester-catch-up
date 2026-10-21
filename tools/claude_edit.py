@@ -10,6 +10,7 @@ lands in the app's "What's new" feed with the reason and an Undo.
                                                              add one insight to the Overview; --about names the
                                                              announcements it sums up (the app links back to them)
   claude_edit.py reviewed A_ID [A_ID ...]                    announcements you read that need no insight
+  claude_edit.py brief YYYY-MM-DD "text"                     the evening notification's summary of that day
 
 COURSE and ITEM are ids as printed by `summary` (e.g. m-6441, m-169162).
 """
@@ -61,6 +62,14 @@ def summary(s):
             continue
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} {i.get('time', '')}"
               f" | w={i.get('weight')} | {i.get('status', 'todo')} | imp={i.get('myImportance', 0)} | locked={i.get('locked', [])}")
+    tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    print(f'TOMORROW {tomorrow} (everything on that day: id course type title time status)')
+    day = sorted((i for i in items.values() if i['date'] == tomorrow and not i.get('hidden')
+                  and not (courses.get(i['c'], {}).get('profile') or {}).get('hidden')), key=lambda i: i.get('time') or '99')
+    for i in day:
+        print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i.get('time') or 'no time'} | {i.get('status', 'todo')}")
+    if not day:
+        print('  nothing')
     insights = s.get('insight')
     covered = {a for i in insights.values() for a in (i.get('about') or [])}
     covered |= set((s.get('settings', 'claude').get('claude') or {}).get('reviewedAnnouncements') or [])
@@ -73,7 +82,7 @@ def summary(s):
         print(f"  {u['id']} {courses.get(u.get('course'), {}).get('short')} {u.get('at', '')[:16]} | {u.get('text', '')} | {body}")
     if not news:
         print('  none')
-    recent = sorted(insights.values(), key=lambda i: i.get('at', ''))[-5:]
+    recent = sorted((i for i in insights.values() if i.get('kind') != 'brief'), key=lambda i: i.get('at', ''))[-5:]
     print('RECENT INSIGHTS (do not repeat these; add one only if it says something new)')
     for i in recent:
         print(f"  {i.get('at', '')[:10]} {i.get('course', '')} | {i.get('text', '')}")
@@ -83,7 +92,7 @@ def summary(s):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight', 'reviewed'])
+    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight', 'reviewed', 'brief'])
     ap.add_argument('args', nargs='*')
     ap.add_argument('--why', default='')
     ap.add_argument('--course', default='')
@@ -109,6 +118,13 @@ def main():
                 doc['course'] = updates[a.about[0]].get('course', '')
         s.put('insight', [doc])
         return print('Insight added.')
+
+    if a.cmd == 'brief':
+        day, text = a.args[0], ' '.join(a.args[1:])
+        dt.date.fromisoformat(day)
+        assert text, 'write the brief text'
+        s.put('insight', [{'id': f'b-{day}', 'kind': 'brief', 'date': day, 'text': text, 'at': NOW, 'source': 'claude'}])
+        return print(f'Brief for {day} saved.')
 
     if a.cmd == 'reviewed':
         cur = s.get('settings', 'claude').get('claude') or {'id': 'claude'}
