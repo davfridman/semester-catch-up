@@ -15,7 +15,7 @@ import datetime as dt
 import json
 import re
 
-from supabase_load import CFG, req, user_id
+from supabase_load import load_cfg, req, user_id
 
 NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
 STAMP = re.sub(r'\D', '', NOW[:19])
@@ -23,7 +23,7 @@ STAMP = re.sub(r'\D', '', NOW[:19])
 
 class Store:
     def __init__(self):
-        self.cfg = json.load(open(CFG))
+        self.cfg = load_cfg()
         self.uid = user_id(self.cfg)
         self.base = self.cfg['url'] + '/rest/v1/docs'
 

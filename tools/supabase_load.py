@@ -2,14 +2,21 @@
 """Upload documents into the app's Supabase table for one user.
 
 Usage: supabase_load.py DATA.json [--replace]
-Reads ~/.config/semester-catchup/supabase.local.json: {"url": "...", "service_key": "...", "email": "..."}
-The service key never leaves this Mac and is never committed. --replace deletes the user's existing rows first.
+Credentials come from the environment (SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_EMAIL), as in the cloud job,
+or else from ~/.config/semester-catchup/supabase.local.json: {"url": "...", "service_key": "...", "email": "..."}.
+The service key is never committed. --replace deletes the user's existing rows first.
 """
 import json, os, ssl, sys, urllib.request
 
 CFG = os.path.expanduser('~/.config/semester-catchup/supabase.local.json')
 # python.org builds of Python ship without CA certificates; use the Mac's own bundle when present.
 SSL = ssl.create_default_context(cafile='/etc/ssl/cert.pem') if os.path.exists('/etc/ssl/cert.pem') else ssl.create_default_context()
+
+
+def load_cfg():
+    if os.environ.get('SUPABASE_SERVICE_KEY'):
+        return {'url': os.environ['SUPABASE_URL'], 'service_key': os.environ['SUPABASE_SERVICE_KEY'], 'email': os.environ['SUPABASE_EMAIL']}
+    return json.load(open(CFG))
 
 
 def req(method, url, key, body=None, extra=None):
@@ -31,7 +38,7 @@ def user_id(cfg):
 
 
 def main():
-    cfg = json.load(open(CFG))
+    cfg = load_cfg()
     data = json.load(open(sys.argv[1]))
     uid = user_id(cfg)
     base = cfg['url'] + '/rest/v1/docs'

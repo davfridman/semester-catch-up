@@ -11,7 +11,7 @@ import argparse, datetime as dt, hashlib, json, os, re, subprocess, sys, time, u
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from supabase_load import req, user_id, CFG, SSL  # noqa: E402
+from supabase_load import req, user_id, load_cfg, SSL  # noqa: E402
 
 ICS_URL_FILE = os.path.expanduser('~/.config/semester-catchup/moodle-ics-url')
 NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
@@ -128,7 +128,7 @@ def main():
     ap.add_argument('--moodle')
     ap.add_argument('--dry-run', action='store_true')
     a = ap.parse_args()
-    cfg = json.load(open(CFG))
+    cfg = load_cfg()
     uid = user_id(cfg)
     base = cfg['url'] + '/rest/v1/docs'
     rows = req('GET', f'{base}?user_id=eq.{uid}&select=col,id,data&limit=10000', cfg['service_key'])
@@ -168,11 +168,18 @@ def main():
 
     moodle = json.load(open(a.moodle)) if a.moodle and os.path.exists(a.moodle) else None
     if moodle and moodle.get('error'):
-        summary.append('! Moodle sign-in has expired, so only the calendar feed was used. Sign in to Moodle in the Claude app browser.')
+        if moodle['error'] == 'token':
+            summary.append('! The Moodle connection has expired, so only the calendar feed was used. Reconnect Moodle in the app: Settings → Connect Moodle.')
+        elif moodle['error'] != 'not-connected':
+            summary.append('! Moodle sign-in has expired, so only the calendar feed was used. Sign in to Moodle in the Claude app browser.')
         moodle = None
+    seen_updates = {r['id'] for r in rows if r['col'] == 'update'}
     claimed = set()
     if moodle:
         for mid, name in moodle.get('courses', {}).items():
+            # The app API lists every enrolment, old ones too; only mention courses with something in them.
+            if moodle.get('source') == 'api' and not moodle.get('activities', {}).get(mid):
+                continue
             if mid not in by_moodle:
                 summary.append(f'! Moodle course not in the app yet: {name}')
         status = moodle.get('status', {})
@@ -255,9 +262,25 @@ def main():
                 had = any(r['id'] == uuid for r in cur.get('recordings') or []) or uuid in (cur.get('link') or '')
                 put(new, f'~ {courses[cid]["short"]}: {cur["title"]} ' + ('recordings sorted by group' if had else 'recording added'))
 
+    # Announcements from each course's news forum -> one card each in the app (last 14 days, never repeated).
+    if moodle:
+        recent = time.time() - 14 * 86400
+        for mid, posts in (moodle.get('announcements') or {}).items():
+            cid = by_moodle.get(mid)
+            if not cid:
+                continue
+            for did, subject, body, ts, link in posts:
+                uid_ = f'a-{mid}-{did}'
+                if uid_ in seen_updates or (ts or 0) < recent:
+                    continue
+                updates[uid_] = {'id': uid_, 'kind': 'announcement', 'text': f'{courses[cid]["short"]}: {subject}', 'detail': body,
+                                 'link': link, 'course': cid, 'at': dt.datetime.fromtimestamp(ts).astimezone().isoformat(timespec='seconds'),
+                                 'seen': False, 'source': 'moodle'}
+                summary.append(f'+ {courses[cid]["short"]}: announcement "{subject}"')
+
     # calendar feed: deadlines the browser data didn't cover
     ics, err = None, None
-    feed = open(ICS_URL_FILE).read().strip()
+    feed = os.environ.get('MOODLE_ICS_URL') or open(ICS_URL_FILE).read().strip()
     for attempt in range(4):  # HUJI's server sometimes resets connections; retry, then fall back to curl
         try:
             if attempt < 3:

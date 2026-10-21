@@ -18,7 +18,7 @@ import datetime as dt
 import json
 import sys
 
-from supabase_load import CFG, req, user_id
+from supabase_load import load_cfg, req, user_id
 
 
 def rows(cfg, uid, extra=''):
@@ -34,7 +34,7 @@ def upsert(cfg, uid, qs):
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
-    cfg = json.load(open(CFG))
+    cfg = load_cfg()
     uid = user_id(cfg)
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == 'add':
