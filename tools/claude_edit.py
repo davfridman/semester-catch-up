@@ -58,6 +58,10 @@ def summary(s):
             continue
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} {i.get('time', '')}"
               f" | w={i.get('weight')} | {i.get('status', 'todo')} | imp={i.get('myImportance', 0)} | locked={i.get('locked', [])}")
+    recent = sorted(s.get('insight').values(), key=lambda i: i.get('at', ''))[-5:]
+    print('RECENT INSIGHTS (do not repeat these; add one only if it says something new)')
+    for i in recent:
+        print(f"  {i.get('at', '')[:10]} {i.get('course', '')} | {i.get('text', '')}")
     qs = s.get('question')
     print(f"QUESTIONS open={sum(1 for q in qs.values() if q.get('status', 'open') == 'open')} answered-unused={sum(1 for q in qs.values() if q.get('status') == 'answered')}")
 
@@ -76,6 +80,9 @@ def main():
 
     if a.cmd == 'insight':
         text = ' '.join(a.args)
+        if a.course and not a.course.startswith('m-'):  # accept a short name like COMP
+            match = [cid for cid, c in s.get('course').items() if (c.get('short') or '').lower() == a.course.lower()]
+            a.course = match[0] if match else a.course
         s.put('insight', [{'id': f'i-{STAMP}', 'text': text, 'course': a.course, 'at': NOW, 'source': 'claude'}])
         return print('Insight added.')
 
