@@ -13,10 +13,12 @@ Run with TZ=Asia/Jerusalem so dates come out in Israel time.
 """
 import datetime as dt
 import html
+import http.client
 import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -52,9 +54,18 @@ def ws(token, function, **args):
     for k, v in args.items():
         flatten(k, v, form)
     url = f'{SITE}/webservice/rest/server.php?' + urllib.parse.urlencode({'wstoken': token, 'wsfunction': function, 'moodlewsrestformat': 'json'})
-    r = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode(), headers={'User-Agent': 'SemesterCatchUp/1.0'})
-    with urllib.request.urlopen(r, timeout=60, context=SSL) as resp:
-        data = json.loads(resp.read().decode() or 'null')
+    body = urllib.parse.urlencode(form).encode()
+    # HUJI's server sometimes drops a connection; retry a few times before giving up on this call.
+    for attempt in range(4):
+        try:
+            r = urllib.request.Request(url, data=body, headers={'User-Agent': 'SemesterCatchUp/1.0'})
+            with urllib.request.urlopen(r, timeout=60, context=SSL) as resp:
+                data = json.loads(resp.read().decode() or 'null')
+            break
+        except (OSError, http.client.HTTPException) as e:
+            if attempt == 3:
+                raise RuntimeError(f'{function}: connection failed ({e})')
+            time.sleep(2 + attempt * 3)
     if isinstance(data, dict) and data.get('exception'):
         if data.get('errorcode') in ('invalidtoken', 'accessexception'):
             raise TokenError(data.get('message', 'invalid token'))
@@ -123,7 +134,7 @@ def snapshot(token):
             out['errors'].append(str(e))
             continue
         out['announcements'][str(f['course'])] = [
-            [str(d['discussion']), d.get('name') or d.get('subject') or '', text(d.get('message')), d.get('timemodified') or d.get('created') or 0,
+            [str(d['discussion']), html.unescape(d.get('name') or d.get('subject') or ''), text(d.get('message')), d.get('timemodified') or d.get('created') or 0,
              f"{SITE}/mod/forum/discuss.php?d={d['discussion']}"]
             for d in ds
         ]

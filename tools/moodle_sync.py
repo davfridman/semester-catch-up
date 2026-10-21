@@ -267,7 +267,7 @@ def main():
         recent = time.time() - 14 * 86400
         for mid, posts in (moodle.get('announcements') or {}).items():
             cid = by_moodle.get(mid)
-            if not cid:
+            if not cid or (courses[cid].get('profile') or {}).get('hidden'):
                 continue
             for did, subject, body, ts, link in posts:
                 uid_ = f'a-{mid}-{did}'
