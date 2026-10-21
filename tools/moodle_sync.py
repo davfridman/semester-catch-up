@@ -170,6 +170,8 @@ def main():
     if moodle and moodle.get('error'):
         if moodle['error'] == 'token':
             summary.append('! The Moodle connection has expired, so only the calendar feed was used. Reconnect Moodle in the app: Settings → Connect Moodle.')
+        elif moodle['error'] == 'api-failed':
+            summary.append("! Moodle couldn't be read this time (connection problem), so only the calendar feed was used. The next run tries again in 3 hours.")
         elif moodle['error'] != 'not-connected':
             summary.append('! Moodle sign-in has expired, so only the calendar feed was used. Sign in to Moodle in the Claude app browser.')
         moodle = None
