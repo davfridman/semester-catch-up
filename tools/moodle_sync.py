@@ -168,12 +168,21 @@ def main():
 
     moodle = json.load(open(a.moodle)) if a.moodle and os.path.exists(a.moodle) else None
     if moodle and moodle.get('error'):
+        prefs_now = next((r['data'] for r in rows if r['col'] == 'settings' and r['id'] == 'prefs'), {}) or {}
+        last = prefs_now.get('lastMoodleSync') or ''
+        try:
+            stale = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(last.replace('Z', '+00:00'))).total_seconds() > 12 * 3600
+        except ValueError:
+            stale = True
         if moodle['error'] == 'token':
-            summary.append('! The Moodle connection has expired, so only the calendar feed was used. Reconnect Moodle in the app: Settings → Connect Moodle.')
+            summary.append('! The Moodle connection has expired, so only the calendar feed was used. Reconnect Moodle in the app: Settings → Moodle and sync → Connect Moodle.')
         elif moodle['error'] == 'api-failed':
-            summary.append("! Moodle couldn't be read this time (connection problem), so only the calendar feed was used. The next run tries again in 3 hours.")
+            # HUJI's server is sometimes down for a while at night. Only say so if it lasted 12 hours.
+            if stale:
+                summary.append("! Moodle hasn't answered for over 12 hours (HUJI's server seems to be down), so only the calendar feed was used. The sync keeps trying every hour.")
         elif moodle['error'] != 'not-connected':
-            summary.append('! Moodle sign-in has expired, so only the calendar feed was used. Sign in to Moodle in the Claude app browser.')
+            # The Mac's browser run, which only brings recordings.
+            summary.append('! New recordings couldn’t be read: the Mac’s Moodle sign-in expired. Open the Claude app’s browser on the Mac and sign in to Moodle. Everything else is up to date.')
         moodle = None
     seen_updates = {r['id'] for r in rows if r['col'] == 'update'}
     update_docs = {r['id']: r['data'] for r in rows if r['col'] == 'update'}

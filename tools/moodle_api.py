@@ -48,7 +48,22 @@ def flatten(prefix, value, out):
         out[prefix] = value
 
 
+# HUJI's Moodle sometimes answers with these for a few minutes (its database is down or under maintenance,
+# usually late at night). They're worth waiting out rather than skipping Moodle for this run.
+TRANSIENT = {'dbconnectionfailed', 'servicenotavailable', 'sitemaintenance', 'upgraderunning'}
+
+
 def ws(token, function, **args):
+    for attempt in range(4):
+        try:
+            return ws_once(token, function, **args)
+        except RuntimeError as e:
+            if attempt == 3 or not any(code in str(e) for code in TRANSIENT):
+                raise
+            time.sleep((20, 60, 120)[attempt])
+
+
+def ws_once(token, function, **args):
     assert function in ALLOWED, function
     form = {}
     for k, v in args.items():
