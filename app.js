@@ -94,7 +94,9 @@ function baseState(it, now) {
   }
   if (it.opens && it.opens > t) return { key: 'open', text: `Opens ${dm(it.opens)}` };
   const n = parse(it.date) ? daysBetween(now, parse(it.date)) : 0;
-  if (n < 0 || (n === 0 && it.time && it.time < nowHHmm())) return { key: 'closed', text: 'Missed' };
+  const passed = n < 0 || (n === 0 && it.time && it.time < nowHHmm());
+  if (passed && it.optional) return { key: 'open', text: 'Not taken' };   // an exam's Moed B, for example
+  if (passed) return { key: 'closed', text: 'Missed' };
   if (n <= 3) return { key: 'due', text: n === 0 ? 'Due today' : n === 1 ? 'Due tomorrow' : `Due ${dow(it.date)}` };
   return { key: 'todo', text: `Due ${dm(it.date)}` };
 }
@@ -119,7 +121,7 @@ function rankedTasks(items) {
 function catchUp(items) {
   const t = today(); let handled = 0, total = 0, behind = 0;
   for (const it of items) {
-    if (!it.date) continue;
+    if (!it.date || (it.optional && !isHandled(it))) continue;
     const happened = isSession(it) ? it.date <= t : it.date < t || state(it).key === 'closed';
     if (!happened) continue;
     const w = importance(it); total += w;
@@ -248,7 +250,7 @@ function card(it, { trailing = 'date', showCourse = true, showPlanTag = true, ti
   const [g, cls] = inProgress(it) && open ? ['◐', ''] : CIRCLE[key] || ['', ''];
   let cue, strong = false;
   if (trailing === 'time') cue = it.time || 'All day';
-  else if (key === 'open') cue = isSession(it) ? 'Upcoming' : `Opens ${dm(it.opens)}`;
+  else if (key === 'open') cue = st.text;
   else if (!open) cue = st.text;
   else if (isSession(it)) { const n = parse(it.date) ? daysBetween(parse(it.date), new Date()) : 0; cue = n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : `${n} days behind`; }
   else { const n = parse(it.date) ? daysBetween(new Date(), parse(it.date)) : 99; cue = n <= 0 ? 'Today' : n === 1 ? 'Tomorrow' : n < 7 ? dow(it.date) : dm(it.date); strong = n <= 1; }
