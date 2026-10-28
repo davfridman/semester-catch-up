@@ -70,6 +70,18 @@ def summary(s):
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i.get('time') or 'no time'} | {i.get('status', 'todo')}")
     if not day:
         print('  nothing')
+    # How finished work went, in the student's own words (the app asks after they finish something).
+    two_weeks = (dt.date.today() - dt.timedelta(days=21)).isoformat()
+    refl = sorted((i for i in items.values() if isinstance(i.get('reflection'), dict) and not i['reflection'].get('skipped')
+                   and i['reflection'].get('at', '') >= two_weeks), key=lambda i: i['reflection'].get('at', ''))
+    print('HOW IT WENT, last 3 weeks (difficulty 1 easy..3 hard, minutes taken, followed 1 yes..3 lost)')
+    for i in refl:
+        r = i['reflection']
+        bits = [f"difficulty={r['difficulty']:.0f}" if 'difficulty' in r else '', f"minutes={r['minutes']:.0f}" if 'minutes' in r else '',
+                f"followed={r['followed']:.0f}" if 'followed' in r else '', f"note={r['note']!r}" if r.get('note') else '']
+        print(f"  {r.get('at', '')} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | " + ' '.join(b for b in bits if b))
+    if not refl:
+        print('  none yet')
     insights = s.get('insight')
     covered = {a for i in insights.values() for a in (i.get('about') or [])}
     covered |= set((s.get('settings', 'claude').get('claude') or {}).get('reviewedAnnouncements') or [])
