@@ -5,9 +5,9 @@ Usage: shnaton.py [--dry-run] [--force]
   --dry-run  print what would change, write nothing
   --force    run even if the Shnaton was already checked today (normally once a day; the hourly job calls this)
 Only reads from HUJI: the Shnaton site's own JSON API (the one shnaton.huji.ac.il/course/<code> calls).
-For each visible course it updates existing exam items: x-<course>-final (the written exam's מועד א') with its
-מועד ב' in x-<course>-final-b, or in the note when there is no -b item, and x-<course>-q1, -q2 ... (the midterms, in
-date order; -q1-b likewise). Fields the student edited ('locked') are kept, and
+For each visible course it updates existing exam items: x-<course>-final (the written exam's מועד א') and
+x-<course>-final-b (its מועד ב', optional; created when missing), and x-<course>-q1, -q2 ... (the midterms, in date
+order; their מועד ב' goes in the note unless a -q1-b item exists). Fields the student edited ('locked') are kept, and
 nothing is ever deleted. A date or time change adds a 'date' card to the app's feed.
 Credentials as in supabase_load.py.
 """
@@ -150,11 +150,19 @@ def main():
         except Exception as e:
             failed.append(f'{c["short"]} ({e})')
             continue
-        todo = []
+        todo, stubs = [], {}
         for key, (sa, sb) in found.items():
             iid = f'x-{num}-{key}'
             if iid not in items:
                 print(f'  {c["short"]}: the Shnaton lists {key} on {sa["date"]} but the app has no item {iid}')
+            elif key == 'final' and sb and f'{iid}-b' not in items:  # a final's מועד ב' gets its own optional item
+                a_ = items[iid]
+                stubs[f'{iid}-b'] = {'c': cid, 'n': 2, 'id': f'{iid}-b', 'date': sb['date'], 'link': f'https://shnaton.huji.ac.il/course/{code}',
+                                     'note': 'Optional second exam date (Moed B): take it if you miss Moed A or want another try.',
+                                     'time': '', 'type': 'Exam', 'opens': '', 'opensTime': '', 'source': 'shnaton', 'status': 'todo',
+                                     'title': a_['title'].replace('Moed A', 'Moed B') if 'Moed A' in a_.get('title', '') else 'Final exam · Moed B',
+                                     'weight': a_.get('weight'), 'optional': True}
+                todo += [(iid, sa, False), (f'{iid}-b', sb, False)]
             elif f'{iid}-b' in items:  # מועד ב' has its own item (x-2823-final-b)
                 todo.append((iid, sa, False))
                 if sb:
@@ -162,12 +170,14 @@ def main():
             else:  # מועד ב' goes in the note
                 todo.append((iid, sa, sb))
         for iid, sa, sb in todo:
-            cur = items[iid]
+            cur = items.get(iid) or stubs[iid]
             if max(sa['date'], sb['date'] if sb else '') < TODAY.isoformat():
                 continue  # over
             new = dict(cur, date=sa['date'], time=sa['time'] or cur.get('time') or '', endTime=sa['end'], rooms=sa['rooms'])
             if sb is not False:
                 new.update(secondDate=sb['date'] if sb else '', secondTime=sb['time'] if sb else '')
+            else:  # מועד ב' is its own item
+                new.pop('secondDate', None); new.pop('secondTime', None)
             if not sa['time']:  # the day is set but not the hour yet: keep what the item had
                 new['endTime'] = cur.get('endTime', '')
             for f in ('endTime', 'rooms', 'secondDate', 'secondTime'):  # no empty fields on items that never had them
@@ -179,6 +189,13 @@ def main():
                     new[f] = cur[f]
                 else:
                     new.pop(f, None)
+            if iid in stubs:
+                changed[iid] = items[iid] = new
+                line = f'{c["short"]}: {new["title"]} on {nice(dt.date.fromisoformat(new["date"]))}' + (f', {span(new["time"], new.get("endTime", ""))}' if new['time'] else '')
+                summary.append('+ ' + line)
+                updates[iid] = {'id': f'u-{STAMP}-{iid}', 'kind': 'new', 'text': line, 'item': iid, 'course': cid, 'at': NOW,
+                                'seen': False, 'source': 'shnaton', 'link': new['link']}
+                continue
             if new == cur:
                 continue
             what, news = [], 'changed'
