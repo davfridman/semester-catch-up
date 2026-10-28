@@ -1,3 +1,4 @@
 .DS_Store
 *.local.json
 __pycache__/
+demo-local.json
