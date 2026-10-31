@@ -11,7 +11,8 @@ lands in the app's "What's new" feed with the reason and an Undo.
                                                              announcements it sums up (the app links back to them)
   claude_edit.py reviewed A_ID [A_ID ...]                    announcements you read that need no insight
   claude_edit.py brief YYYY-MM-DD "text"                     the evening notification's summary of that day
-  claude_edit.py reply MSG_ID "text"                         answer the student's chat message in the app
+  claude_edit.py reply MSG_ID "text" [--items ID ...]        answer the student's chat message in the app; --items
+                                                             shows those tasks/lectures as tappable cards under it
   claude_edit.py tips off|on KIND                            turn one of the app's own tips off/on
                                                              (exam, behind, week, opens, attend)
 
@@ -57,12 +58,25 @@ def summary(s):
     print('CHAT (the student writes to you in the app; answer every message marked NEEDS ANSWER with `reply`)')
     for m in chat[-12:]:
         flag = '' if m.get('from') == 'claude' or m.get('answered') else '  NEEDS ANSWER'
-        print(f"  {m['id']} {m.get('at', '')[:16]} {m.get('from')}: {m.get('text', '')}{flag}")
+        cards = f" [cards: {', '.join(m['items'])}]" if m.get('items') else ''
+        print(f"  {m['id']} {m.get('at', '')[:16]} {m.get('from')}: {m.get('text', '')}{cards}{flag}")
     if not chat:
         print('  none')
     print('WHAT THE STUDENT WANTS FROM YOU (their own words, from Settings)')
     print('  ' + (prefs.get('claudeGuidance') or 'nothing written yet'))
     fb = sorted((i for i in s.get('insight').values() if isinstance(i.get('feedback'), dict)), key=lambda i: i['feedback'].get('at', ''))[-12:]
+    # The student's plan of action, in order, with their named slots (a slot holds the items after it).
+    slots = prefs.get('planSlots') or {}
+    plan = [e for e in prefs.get('plan') or [] if (e in slots if e.startswith('slot:') else e in items)]
+    print('PLAN (the order the student chose; "## name" is a slot of the items under it)')
+    for e in plan:
+        if e.startswith('slot:'):
+            print(f'  ## {slots[e]}')
+        else:
+            i = items[e]
+            print(f"    {e} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} | {i.get('status', 'todo')}")
+    if not plan:
+        print('  empty')
     print("FEEDBACK ON YOUR INSIGHTS (learn from it: write fewer of what they didn't find useful)")
     for i in fb:
         f = i['feedback']
@@ -84,6 +98,13 @@ def summary(s):
             continue
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} {i.get('time', '')}"
               f" | w={i.get('weight')} | {i.get('status', 'todo')} | imp={i.get('myImportance', 0)} | locked={i.get('locked', [])}")
+    print('LECTURES AND TUTORIALS HELD, NOT WATCHED YET (id course type title date status)')
+    behind = [i for i in sorted(items.values(), key=lambda i: i['date']) if i['type'] in sessions and i['date'] <= today and not i.get('hidden')
+              and i.get('status') not in ('done', 'skip', 'attended', 'reviewed') and not (courses.get(i['c'], {}).get('profile') or {}).get('hidden')]
+    for i in behind[-40:]:
+        print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} | {i.get('status', 'todo')}")
+    if not behind:
+        print('  none')
     tomorrow = (dt.date.today() + dt.timedelta(days=1)).isoformat()
     print(f'TOMORROW {tomorrow} (everything on that day: id course type title time status)')
     day = sorted((i for i in items.values() if i['date'] == tomorrow and not i.get('hidden')
@@ -131,6 +152,7 @@ def main():
     ap.add_argument('--why', default='')
     ap.add_argument('--course', default='')
     ap.add_argument('--about', nargs='*', default=[])
+    ap.add_argument('--items', nargs='*', default=[])
     a = ap.parse_args()
     s = Store()
 
@@ -158,8 +180,13 @@ def main():
         notes = s.get('note')
         assert mid in notes, f'no chat message {mid}'
         assert text, 'write the reply'
-        s.put('note', [{'id': f'r-{STAMP}', 'kind': 'chat', 'from': 'claude', 'text': text, 'at': NOW, 'replyTo': mid},
-                       dict(notes[mid], answered=True)])
+        items = s.get('item')
+        missing = [x for x in a.items if x not in items]
+        assert not missing, f'unknown item ids: {missing}'
+        doc = {'id': f'r-{STAMP}', 'kind': 'chat', 'from': 'claude', 'text': text, 'at': NOW, 'replyTo': mid}
+        if a.items:
+            doc['items'] = a.items
+        s.put('note', [doc, dict(notes[mid], answered=True)])
         return print('Reply sent.')
 
     if a.cmd == 'tips':
