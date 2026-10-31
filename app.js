@@ -11,7 +11,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------- State ----------
-const S = { user: null, courses: [], items: [], prefs: {}, questions: [], updates: [], insights: [], loaded: false,
+const S = { user: null, courses: [], items: [], prefs: {}, questions: [], updates: [], insights: [], chat: [], loaded: false,
   tab: 'overview', route: [], list: 'plan', courseTab: 'tasks', day: null, sheet: null };
 const SESSION_TYPES = new Set(['Lecture', 'Tutorial', 'Online unit']);
 const COLORS = ['blue', 'purple', 'pink', 'teal', 'indigo', 'orange', 'cyan', 'brown'];
@@ -137,7 +137,13 @@ function weeks() {
   return Array.from({ length: count }, (_, i) => { const s = addDays(start, i * 7); return { n: i + 1, ws: iso(s), we: iso(addDays(s, 6)) }; });
 }
 const currentWeek = () => { const t = today(), w = weeks(); return w.find(x => t >= x.ws && t <= x.we) || (t < w[0].ws ? w[0] : w[w.length - 1]); };
-const planIDs = () => (S.prefs.plan || []).filter(id => item(id));
+// The plan as stored: item ids and named slots ("slot:<id>") in order. A slot holds the items after it, up to the next slot.
+const isSlot = e => String(e).startsWith('slot:');
+const slotNames = () => S.prefs.planSlots || {};
+const planRaw = () => (S.prefs.plan || []).filter(e => isSlot(e) ? slotNames()[e] != null : item(e));
+const slotEnd = (raw, i) => { const j = raw.findIndex((e, k) => k > i && isSlot(e)); return j < 0 ? raw.length : j; };
+const slotItems = id => { const raw = planRaw(), i = raw.indexOf(id); return i < 0 ? [] : raw.slice(i + 1, slotEnd(raw, i)).map(item); };
+const planIDs = () => planRaw().filter(e => !isSlot(e));
 const planItems = () => planIDs().map(item).filter(i => i && !i.hidden);
 const attendance = its => { const held = its.filter(i => isSession(i) && i.type !== 'Online unit' && i.date <= today()); return { attended: held.filter(i => status(i) === 'attended').length, held: held.length }; };
 const isRTL = s => { let r = 0, l = 0; for (const ch of String(s || '')) { if (/[֐-ࣿיִ-﷿]/.test(ch)) r++; else if (/\p{L}/u.test(ch)) l++; } return r > l; };
@@ -150,17 +156,18 @@ const DEMO = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSe
 async function load() {
   if (DEMO) {
     const o = await (await fetch(DEMO)).json();
-    Object.assign(S, { courses: o.courses || [], items: o.items || [], questions: o.questions || [], updates: o.updates || [], insights: o.insights || [], prefs: o.prefs || {}, loaded: true });
+    Object.assign(S, { courses: o.courses || [], items: o.items || [], questions: o.questions || [], updates: o.updates || [], insights: o.insights || [], chat: o.chat || [], prefs: o.prefs || {}, loaded: true });
     applyTheme(); return render();
   }
   const { data, error } = await sb.from('docs').select('col,id,data').eq('user_id', S.user.id).range(0, 9999);
   if (error) { toast(`Couldn’t load: ${error.message}`); return; }
-  const by = { course: [], item: [], question: [], update: [], insight: [] }; let prefs = {};
+  const by = { course: [], item: [], question: [], update: [], insight: [], note: [] }; let prefs = {};
   for (const r of data) {
     if (r.col === 'settings' && r.id === 'prefs') prefs = r.data || {};
     else if (by[r.col]) by[r.col].push({ ...r.data, id: r.data?.id || r.id });
   }
-  Object.assign(S, { courses: by.course, items: by.item, questions: by.question, updates: by.update, insights: by.insight, prefs, loaded: true });
+  const chat = by.note.filter(n => n.kind === 'chat').sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+  Object.assign(S, { courses: by.course, items: by.item, questions: by.question, updates: by.update, insights: by.insight, chat, prefs, loaded: true });
   applyTheme();
   render();
 }
@@ -174,7 +181,7 @@ async function patch(col, id, change) {
   const next = change(structuredClone(cur)) || cur;
   const { error: e2 } = await sb.from('docs').upsert({ user_id: S.user.id, col, id, data: next }, { onConflict: 'user_id,col,id' });
   if (e2) { toast(`Not saved: ${e2.message}`); return; }
-  const list = { course: S.courses, item: S.items, question: S.questions, update: S.updates, insight: S.insights }[col];
+  const list = { course: S.courses, item: S.items, question: S.questions, update: S.updates, insight: S.insights, note: S.chat }[col];
   if (col === 'settings' && id === 'prefs') S.prefs = next;
   else if (list) { const i = list.findIndex(x => x.id === id); if (i >= 0) list[i] = next; else list.push(next); }
   render();
@@ -199,7 +206,27 @@ function setStatus(id, value, announce = true) {
   if (['done', 'attended', 'reviewed'].includes(value) && S.prefs.askReflection !== false && !it.reflection) setTimeout(() => openSheet({ kind: 'reflect', id }), 500);
 }
 const inPlan = id => planIDs().includes(id);
-const togglePlan = id => setPref('plan', inPlan(id) ? planIDs().filter(x => x !== id) : [...planIDs(), id]);
+const togglePlan = id => setPref('plan', inPlan(id) ? planRaw().filter(x => x !== id) : [...planRaw(), id]);
+// Up or down one place. A card can cross into the next slot; a slot moves past the next slot with all its cards.
+function movePlanEntry(e, dir) {
+  const raw = planRaw(), i = raw.indexOf(e); if (i < 0) return;
+  if (!isSlot(e)) { const j = i + dir; if (j < 0 || j >= raw.length) return; [raw[i], raw[j]] = [raw[j], raw[i]]; return setPref('plan', raw); }
+  const end = slotEnd(raw, i), block = raw.slice(i, end), rest = [...raw.slice(0, i), ...raw.slice(end)];
+  if (dir < 0) { if (i === 0) return; let st = i - 1; while (st > 0 && !isSlot(raw[st])) st--; rest.splice(st, 0, ...block); }
+  else { if (end >= raw.length) return; rest.splice(i + slotEnd(raw, end) - end, 0, ...block); }
+  setPref('plan', rest);
+}
+function addSlot() {
+  const name = (prompt('Name the slot, like “Sunday morning”. It goes at the bottom; move cards into it.') || '').trim(); if (!name) return;
+  const id = 'slot:' + Math.random().toString(36).slice(2, 10);
+  optimistic('settings', 'prefs', p => { p.planSlots = { ...(p.planSlots || {}), [id]: name }; p.plan = [...(p.plan || []), id]; return p; });
+}
+function renameSlot(id) {
+  const name = (prompt('Rename the slot', slotNames()[id] || '') || '').trim(); if (!name) return;
+  optimistic('settings', 'prefs', p => { p.planSlots = { ...(p.planSlots || {}), [id]: name }; return p; });
+}
+// Deleting a slot keeps its cards; they join whatever is above.
+const deleteSlot = id => optimistic('settings', 'prefs', p => { p.plan = (p.plan || []).filter(e => e !== id); const n = { ...(p.planSlots || {}) }; delete n[id]; p.planSlots = n; return p; });
 const markSeen = ids => ids.forEach(id => optimistic('update', id, d => { d.seen = true; return d; }));
 
 // ---------- Feed ----------
@@ -236,6 +263,7 @@ const yourNote = it => (it.locked || []).includes('note') ? (it.note || '').trim
 const reflectionNote = it => it.reflection?.note || '';
 const hasYourNotes = it => !!(yourNote(it) || reflectionNote(it));
 const ICONS = {
+  courses: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="4" width="4" height="16" rx="1"/><rect x="9.5" y="4" width="4" height="16" rx="1"/><path d="M15.6 5.2l3.8-1 3.1 15.4-3.8 1z"/></svg>',
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4" stroke-linecap="round"/></svg>',
   schedule: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
   plan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><text x="2.5" y="8" font-size="6" fill="currentColor" stroke="none">1</text><text x="2.5" y="14" font-size="6" fill="currentColor" stroke="none">2</text><text x="2.5" y="20" font-size="6" fill="currentColor" stroke="none">3</text></svg>',
@@ -291,14 +319,14 @@ function overview() {
   const plan = planItems().filter(i => !isHandled(i)), cards = feedCards(), qs = S.questions.filter(q => (q.status || 'open') === 'open');
   const list = S.list === 'plan' ? cardsOr(plan.slice(0, 8), 'Nothing planned. Open a task and tap the plan button.', { showPlanTag: false })
     : S.list === 'tasks' ? cardsOr(tasks, 'Nothing open right now.') : cardsOr(lectures, 'You’re caught up on lectures.');
-  return `<div class="head"><div><div class="sub">${esc(longDate())}</div><h1>Overview</h1></div><button class="hbtn" data-go="notes" aria-label="Your notes" title="Your notes">${ROW_ICONS.note}</button></div>
+  return `<div class="head"><div><div class="sub">${esc(longDate())}</div><h1>Overview</h1></div><div class="hbtns"><button class="hbtn" data-go="chat" aria-label="Chat with Claude" title="Chat with Claude"><span style="font-size:18px">✦</span></button><button class="hbtn" data-go="notes" aria-label="Your notes" title="Your notes">${ROW_ICONS.note}</button></div></div>
   <div class="group pad"><button class="rings-top" style="width:100%" data-go="progress"><b>${s.percent}</b><span style="color:var(--label2);font-size:15px">caught up</span><span style="flex:1"></span><span style="color:var(--label2);font-size:15px">Week ${w.n} of ${weeks().length}</span></button>
     <div class="rings" style="grid-template-columns:repeat(${cols},1fr)">${courses.map(c => { const cs = catchUp(items.filter(i => i.c === c.id)); return `<button class="ring-item" data-course="${esc(c.id)}" aria-label="${esc(displayName(c))}, ${cs.percent} caught up">${ringWithText(cs.fraction, 52, 6, color(c.id), cs.percent, 11)}<span class="name" style="color:${color(c.id)}">${esc(short(c))}</span><span class="meta">${cs.behind ? `${cs.behind} to watch` : 'caught up'}</span></button>`; }).join('')}</div></div>
   ${qs.length ? `<button class="group pad qbanner" style="width:100%;text-align:left" data-sheet="questions"><span class="spark">✦</span><span class="grow"><b>${qs.length === 1 ? 'Claude has a question' : `Claude has ${qs.length} questions`}</b><br><span style="color:var(--label2);font-size:15px">A few taps help Claude rank things for you</span></span><span style="color:var(--accent);font-weight:600">Answer</span></button>` : ''}
   <div class="feed-head"><h3>For you</h3><button style="color:var(--accent);font-weight:600;font-size:15px" data-go="feed">${cards.length ? `${cards.length} new ›` : 'History ›'}</button></div>
   ${cards.length ? feedCard(cards[0], cards.length > 1) : `<div class="fcard" style="cursor:default"><span style="color:var(--green)">✓</span> You’re all caught up on updates.</div>`}
   <div class="tray">${seg('list', [['plan', `Plan · ${plan.length}`], ['tasks', `Tasks · ${tasks.length}`], ['lectures', `Lectures · ${lectures.length}`]], S.list)}${list}
-    ${S.list === 'plan' && plan.length > 8 ? `<button class="row" data-tab="plan">All ${plan.length} in your plan<span class="grow"></span><span class="chev"></span></button>` : ''}</div>`;
+    ${S.list === 'plan' ? `<button class="row" data-go="plan" style="color:var(--accent);font-weight:500">${plan.length > 8 ? `All ${plan.length} in your plan` : 'Open your plan'}<span class="grow"></span><span class="chev"></span></button>` : ''}</div>`;
 }
 function feedCard(c, stacked = false) {
   const co = course(c.course);
@@ -389,6 +417,13 @@ function infoScreen(id) {
   ${(profile(c).rules || []).length ? `<div class="group-title">What Claude knows</div><div class="group">${profile(c).rules.map(r => `<div class="row">${esc(r)}</div>`).join('')}</div>` : ''}
   <div class="group-title">Notes</div><div class="group pad post" dir="auto">${esc(c.notes || 'No notes for this course.')}</div>`;
 }
+// Under each day, like Calendar: one dot per course with something that day, in its color, up to three.
+// A red dot first on an exam day. A course's dot fades once everything of it that day is done.
+function dayDots(es) {
+  const exam = es.some(x => x.kind === 'due' && isExam(x.it)), rest = es.filter(x => !(x.kind === 'due' && isExam(x.it)));
+  const ids = visibleCourses().map(c => c.id).filter(c => rest.some(x => x.it.c === c)).slice(0, exam ? 2 : 3);
+  return `<span class="dots">${exam ? '<span class="dot" style="background:var(--red)"></span>' : ''}${ids.map(c => `<span class="dot" style="background:${color(c)};opacity:${rest.filter(x => x.it.c === c).every(x => isHandled(x.it)) ? .3 : 1}"></span>`).join('')}</span>`;
+}
 function scheduleScreen() {
   const w = weeks(), first = parse(w[0].ws), last = addDays(parse(w[w.length - 1].ws), 6);
   const d = S.day || (today() < iso(first) ? iso(first) : today() > iso(last) ? iso(last) : today());
@@ -398,17 +433,59 @@ function scheduleScreen() {
   const byTime = (a, b) => (a.it.time || '99').localeCompare(b.it.time || '99');
   const wk = w.find(x => d >= x.ws && d <= x.we);
   return `<div class="head"><div><div class="sub">${d === today() ? 'Today · ' : ''}${wk ? `Week ${wk.n}` : ''}</div><h1 style="font-size:28px">${esc(dayLabel(d))}</h1></div>${d !== today() ? '<button class="pill" data-day="today">Today</button>' : ''}</div>
-  <div class="day-strip" id="strip">${days.map(x => { const es = ev(x), due = es.some(y => y.kind === 'due'); return `<button class="day ${x === d ? 'on' : ''} ${x === today() ? 'today' : ''}" data-day="${x}" id="d-${x}">${DOW[parse(x).getDay()]}<b>${parse(x).getDate()}</b><span class="dot" style="background:${due ? 'var(--label2)' : es.length ? 'var(--label3)' : 'transparent'}"></span></button>`; }).join('')}</div>
+  <div class="day-strip" id="strip">${days.map(x => { const es = ev(x), due = es.some(y => y.kind === 'due'); return `<button class="day ${x === d ? 'on' : ''} ${x === today() ? 'today' : ''}" data-day="${x}" id="d-${x}">${DOW[parse(x).getDay()]}<b>${parse(x).getDate()}</b>${dayDots(es)}</button>`; }).join('')}</div>
   ${tasks.length ? `<div class="sec">Tasks</div>${cardsOr(tasks.sort(byTime).map(x => x.it), '', { trailing: 'time' })}` : ''}
   ${lect.length ? `<div class="sec">Lectures</div>${cardsOr(lect.sort(byTime).map(x => x.it), '', { trailing: 'time' })}` : ''}
   ${!e.length ? '<div class="empty" style="text-align:center;padding:40px 0">Nothing on this day.</div>' : ''}`;
 }
 function planScreen() {
-  const plan = planItems(), open = plan.filter(i => !isHandled(i)).length;
-  return `<div class="head"><div><div class="sub">${plan.length ? `${open} to go${plan.length - open ? ` · ${plan.length - open} done` : ''}` : 'Your order of work'}</div><h1>Plan</h1></div>${plan.length > open ? '<button class="pill" data-cleardone>Clear done</button>' : ''}</div>
-  ${plan.length ? `<div class="cards">${plan.map((it, n) => `<div style="display:flex;gap:8px;align-items:center"><span style="width:20px;text-align:center;color:var(--label2);font-weight:600">${n + 1}</span><div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
-    <div style="display:grid;gap:2px"><button class="round" style="width:32px;height:32px;font-size:14px" data-move="${esc(it.id)}" data-dir="-1" aria-label="Move up" ${n === 0 ? 'disabled' : ''}>↑</button><button class="round" style="width:32px;height:32px;font-size:14px" data-move="${esc(it.id)}" data-dir="1" aria-label="Move down" ${n === plan.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('')}</div>`
-    : '<div class="group pad" style="text-align:center"><b>No plan yet</b><p style="color:var(--label2)">Put the tasks and lectures you want to get through in order. Open any card and tap the plan button.</p></div>'}`;
+  const raw = planRaw(), plan = planItems(), open = plan.filter(i => !isHandled(i)).length, names = slotNames();
+  const btn = (attrs, label, text) => `<button class="round" style="width:32px;height:32px;font-size:14px" ${attrs} aria-label="${label}" title="${label}">${text}</button>`;
+  let n = 0;
+  const rows = raw.map((e, i) => {
+    if (isSlot(e)) {
+      const its = slotItems(e).filter(Boolean), left = its.filter(x => !isHandled(x));
+      return `<div class="slot-head"><span class="grow"><b>${esc(names[e])}</b><small>${its.length ? left.length ? `${left.length} to go` : 'All done' : 'Empty: move cards here'}</small></span>
+        ${btn(`data-pmove="${esc(e)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}`, 'Move slot up', '↑')}${btn(`data-pmove="${esc(e)}" data-dir="1" ${slotEnd(raw, i) >= raw.length ? 'disabled' : ''}`, 'Move slot down', '↓')}
+        ${btn(`data-slotmenu="${esc(e)}"`, `${esc(names[e])} options`, '⋯')}</div>`;
+    }
+    const it = item(e); if (it.hidden) return ''; n++;
+    return `<div style="display:flex;gap:8px;align-items:center"><span style="width:20px;text-align:center;color:var(--label2);font-weight:600">${n}</span><div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
+    <div style="display:grid;gap:2px">${btn(`data-pmove="${esc(e)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}`, 'Move up', '↑')}${btn(`data-pmove="${esc(e)}" data-dir="1" ${i === raw.length - 1 ? 'disabled' : ''}`, 'Move down', '↓')}</div></div>`;
+  }).join('');
+  return `<button class="back" data-back>‹ Overview</button><div class="head"><div><div class="sub">${plan.length ? `${open} to go${plan.length - open ? ` · ${plan.length - open} done` : ''}` : 'Your order of work'}</div><h2>Plan</h2></div>
+  <div class="hbtns">${plan.length > open ? '<button class="pill" data-cleardone>Clear done</button>' : ''}<button class="pill" data-addslot>+ Slot</button></div></div>
+  ${raw.length ? `<div class="cards">${rows}</div>`
+    : '<div class="group pad" style="text-align:center"><b>No plan yet</b><p style="color:var(--label2)">Put the tasks and lectures you want to get through in order. Open any card and tap the plan button. Group them into slots like “Sunday morning” with + Slot.</p></div>'}`;
+}
+// The Courses tab: every course with how caught up it is.
+function coursesScreen() {
+  const row = c => { const its = S.items.filter(i => i.c === c.id && !i.hidden), s = catchUp(its), open = its.filter(i => !isSession(i) && isOpenish(i)).length;
+    return `<button class="row" data-course="${esc(c.id)}">${ringWithText(s.fraction, 42, 5, color(c.id), s.percent, 10)}<span class="grow"><span style="display:block">${esc(c.name)}</span><span style="font-size:15px;color:var(--label2)"><span style="color:${color(c.id)}">${esc(short(c))}</span>${s.behind ? ` · ${s.behind} to watch` : ''}${open ? ` · ${open} open` : ''}</span></span><span class="chev"></span></button>`; };
+  const hidden = S.courses.filter(c => profile(c).hidden);
+  return `<div class="head"><div><div class="sub">${visibleCourses().length} this semester</div><h1>Courses</h1></div></div>
+  <div class="group">${visibleCourses().map(row).join('') || '<div class="row val">No courses yet.</div>'}</div>
+  ${hidden.length ? `<div class="group-title">Hidden</div><div class="group" style="opacity:.55">${hidden.map(row).join('')}</div><div class="group-foot">Hidden courses are left out of Overview, Schedule and the score.</div>` : ''}`;
+}
+// A short thread with Claude. Its replies can carry cards (tasks and lectures) you can tap or add to your plan.
+function chatScreen() {
+  const msgs = S.chat, draft = S.chatDraft || {};
+  const cards = (m) => { const its = (m.items || []).map(item).filter(Boolean); if (!its.length) return '';
+    const add = its.filter(i => !inPlan(i.id) && !isHandled(i));
+    return `<div class="chat-cards ${m.from === 'claude' ? '' : 'mine'}"><div class="cards">${its.map(i => card(i)).join('')}</div>${m.from === 'claude' && add.length ? `<button class="pill" data-addall="${esc(add.map(i => i.id).join(','))}">${add.length === 1 ? 'Add to your plan' : `Add these ${add.length} to your plan`}</button>` : ''}</div>`; };
+  return `<button class="back" data-back>‹ Overview</button><div class="head"><h2>Claude</h2></div>
+  ${msgs.length ? '' : '<div class="group pad"><b style="color:#af52de">✦ Talk to Claude</b><p style="color:var(--label2);font-size:15px;margin:6px 0 0">Ask about your semester, or tell Claude what’s useful and what isn’t. It can change your course rules, what matters most, and which tips you get.</p></div>'}
+  <div class="chat">${msgs.map(m => `<div class="bubble ${m.from === 'claude' ? 'claude' : 'me'}" dir="auto">${esc(m.text)}</div><div class="when ${m.from === 'claude' ? '' : 'me'}">${m.from === 'claude' ? 'Claude · ' : ''}${esc(ago(m.at))}</div>${cards(m)}`).join('')}</div>
+  <div class="composer">${(draft.items || []).length ? `<div class="attached">📎 ${draft.items.length} card${draft.items.length === 1 ? '' : 's'} attached <button data-unattach aria-label="Remove attached cards">✕</button></div>` : ''}
+    <div style="display:flex;gap:8px;align-items:flex-end"><textarea rows="${(draft.text || '').length > 30 ? 2 : 1}" placeholder="Message Claude" data-chatdraft dir="auto">${esc(draft.text || '')}</textarea><button class="pill primary" data-chatsend>Send</button></div>
+    <div class="group-foot" style="margin:6px 4px 0">Claude answers on its next run: every evening, or within a minute when you send from the iPhone app.</div></div>`;
+}
+async function sendChat() {
+  const d = S.chatDraft || {}, text = (d.text || '').trim(); if (!text) return;
+  const at = new Date().toISOString(), id = 'm-' + at.replace(/\D/g, '').slice(0, 14);
+  const doc = { id, kind: 'chat', from: 'you', text, at, ...(d.items?.length ? { items: d.items } : {}) };
+  S.chatDraft = null; S.chat.push(doc); render();
+  if (!DEMO) await patch('note', id, () => doc);
 }
 function settingsScreen() {
   const fresh = (label, stamp) => { const d = stamp ? new Date(stamp) : null, h = d ? (Date.now() - d) / 36e5 : 1e9; const c = h <= 7 ? 'var(--green)' : h <= 72 ? 'var(--orange)' : 'var(--red)';
@@ -437,6 +514,8 @@ function renderSheet() {
   else if (s.kind === 'card') html = cardSheet(s.id);
   else if (s.kind === 'questions') html = questionSheet();
   else if (s.kind === 'week') html = weekSheet(s);
+  else if (s.kind === 'slot') html = `<div class="bar-top"><b>${esc(slotNames()[s.id] || '')}</b><button class="pill" data-close>Done</button></div>
+    <div class="group"><button class="row" data-slotrename="${esc(s.id)}"><span class="ico">✎</span><span class="grow">Rename</span></button><button class="row" data-slotask="${esc(s.id)}"><span class="ico">✦</span><span class="grow">Ask Claude about it</span></button><button class="row" data-slotdel="${esc(s.id)}" style="color:var(--red)"><span class="ico" style="color:var(--red)">✕</span><span class="grow">Delete slot (keeps the cards)</span></button></div>`;
   $('#layer').innerHTML = `<div class="scrim" data-scrim><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div></div>`;
 }
 function itemSheet(id) {
@@ -522,10 +601,12 @@ function render() {
   else if (r?.startsWith('news:')) html = newsScreen(r.slice(5));
   else if (r?.startsWith('info:')) html = infoScreen(r.slice(5));
   else if (r === 'notes' || r?.startsWith('notes:')) html = notesScreen(r.slice(6));
-  else html = { overview, schedule: scheduleScreen, plan: planScreen, settings: settingsScreen }[S.tab]();
+  else if (r === 'plan') html = planScreen();
+  else if (r === 'chat') html = chatScreen();
+  else html = { overview, schedule: scheduleScreen, courses: coursesScreen, settings: settingsScreen }[S.tab]();
   $('#app').innerHTML = html;
   const tabs = $('#tabs'); tabs.classList.remove('hidden');
-  tabs.innerHTML = [['overview', 'Overview'], ['schedule', 'Schedule'], ['plan', 'Plan'], ['settings', 'Settings']].map(([k, l]) => `<button class="${S.tab === k && !S.route.length ? 'on' : S.tab === k ? 'on' : ''}" data-tab="${k}" aria-label="${l}">${ICONS[k]}<span>${l}</span></button>`).join('');
+  tabs.innerHTML = [['overview', 'Overview'], ['schedule', 'Schedule'], ['courses', 'Courses'], ['settings', 'Settings']].map(([k, l]) => `<button class="${S.tab === k && !S.route.length ? 'on' : S.tab === k ? 'on' : ''}" data-tab="${k}" aria-label="${l}">${ICONS[k]}<span>${l}</span></button>`).join('');
   if (S.tab === 'schedule' && !S.route.length) document.getElementById('d-' + (S.day || today()))?.scrollIntoView({ inline: 'center', block: 'nearest' });
   if (S.sheet) renderSheet();
 }
@@ -561,14 +642,22 @@ document.addEventListener('click', e => {
   if (d.tab) { S.tab = d.tab; S.route = []; closeSheet(); window.scrollTo(0, 0); return render(); }
   if (d.go) { closeSheet(); return go(d.go); }
   if (d.back !== undefined) return back();
-  if (d.course) { closeSheet(); S.tab = 'overview'; S.route = [`course:${d.course}`]; S.courseTab = 'tasks'; window.scrollTo(0, 0); return render(); }
+  if (d.course) { closeSheet(); S.tab = S.tab === 'courses' && !S.route.length ? 'courses' : 'overview'; S.route = [`course:${d.course}`]; S.courseTab = 'tasks'; window.scrollTo(0, 0); return render(); }
   if (d.seg) { S[d.seg] = d.val; return render(); }
   if (d.day) { closeSheet(); S.day = d.day === 'today' ? null : d.day; S.tab = 'schedule'; S.route = []; return render(); }
   if (d.close !== undefined) return closeSheet();
   if (d.status) { setStatus(d.status, d.val); if (S.sheet?.kind === 'item' && !(['done', 'attended', 'reviewed'].includes(d.val))) renderSheet(); else if (S.sheet?.kind === 'item') closeSheet(); return; }
   if (d.plan) { togglePlan(d.plan); return; }
-  if (d.move) { const ids = planIDs(), i = ids.indexOf(d.move), j = i + Number(d.dir); if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; return setPref('plan', ids); }
-  if (d.cleardone !== undefined) return setPref('plan', planIDs().filter(id => !isHandled(item(id))));
+  if (d.pmove) return movePlanEntry(d.pmove, Number(d.dir));
+  if (d.cleardone !== undefined) return setPref('plan', planRaw().filter(e => isSlot(e) || !isHandled(item(e))));
+  if (d.addslot !== undefined) return addSlot();
+  if (d.slotmenu) return openSheet({ kind: 'slot', id: d.slotmenu });
+  if (d.slotrename) { closeSheet(); return renameSlot(d.slotrename); }
+  if (d.slotdel) { closeSheet(); return deleteSlot(d.slotdel); }
+  if (d.slotask) { closeSheet(); S.chatDraft = { text: `About my plan slot “${slotNames()[d.slotask]}”: `, items: slotItems(d.slotask).filter(Boolean).map(i => i.id) }; return go('chat'); }
+  if (d.addall) { const add = d.addall.split(','); setPref('plan', [...planRaw(), ...add.filter(x => !inPlan(x))]); return toast(add.length === 1 ? 'Added to your plan' : `Added ${add.length} to your plan`); }
+  if (d.unattach !== undefined) { S.chatDraft = { ...(S.chatDraft || {}), items: [] }; return render(); }
+  if (d.chatsend !== undefined) return sendChat();
   if (d.allseen !== undefined) { feedCards().forEach(seenCard); return; }
   if (d.sheet === 'questions') return openSheet({ kind: 'questions' });
   if (d.answer) { answerQuestion(d.answer, d.opt); return renderSheet(); }
@@ -583,6 +672,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.stop) { const v = Number(t.value); $('#mins').textContent = `${v} of ${item(t.dataset.stop)?.duration || 90} min`; }
   if (t.dataset.reflectNote !== undefined) { S.sheet.a = S.sheet.a || {}; S.sheet.a.note = t.value; }
+  if (t.dataset.chatdraft !== undefined) { S.chatDraft = { ...(S.chatDraft || {}), text: t.value }; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
   if (t.dataset.notesq !== undefined) { S.notesQuery = t.value; render(); const q = $('[data-notesq]'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 });
 document.addEventListener('change', e => {
