@@ -65,17 +65,22 @@ def summary(s):
     print('WHAT THE STUDENT WANTS FROM YOU (their own words, from Settings)')
     print('  ' + (prefs.get('claudeGuidance') or 'nothing written yet'))
     fb = sorted((i for i in s.get('insight').values() if isinstance(i.get('feedback'), dict)), key=lambda i: i['feedback'].get('at', ''))[-12:]
-    # The student's plan of action, in order, with their named slots (a slot holds the items after it).
-    slots = prefs.get('planSlots') or {}
-    plan = [e for e in prefs.get('plan') or [] if (e in slots if e.startswith('slot:') else e in items)]
-    print('PLAN (the order the student chose; "## name" is a slot of the items under it)')
-    for e in plan:
-        if e.startswith('slot:'):
-            print(f'  ## {slots[e]}')
-        else:
-            i = items[e]
-            print(f"    {e} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} | {i.get('status', 'todo')}")
-    if not plan:
+    # The student's plan of action, in order. A slot is a named group of cards ("Sunday morning") that moves as one.
+    stored = prefs.get('planSlots') or {}
+    print('PLAN (the order the student chose; "## name" is a slot, the indented lines under it are its cards)')
+    legacy, shown = None, 0
+    line = lambda e, pad: print(f"{pad}{e} {courses.get(items[e]['c'], {}).get('short')} {items[e]['type']} | {items[e]['title']} | {items[e]['date']} | {items[e].get('status', 'todo')}")
+    for e in prefs.get('plan') or []:
+        if e.startswith('slot:') and e in stored:
+            v = stored[e]
+            print(f"  ## {v.get('name') if isinstance(v, dict) else v}")
+            legacy = None if isinstance(v, dict) else e  # the first version kept a slot's cards after it in the plan
+            for x in (v.get('items') or []) if isinstance(v, dict) else []:
+                if x in items:
+                    line(x, '      '); shown += 1
+        elif e in items:
+            line(e, '      ' if legacy else '    '); shown += 1
+    if not shown:
         print('  empty')
     print("FEEDBACK ON YOUR INSIGHTS (learn from it: write fewer of what they didn't find useful)")
     for i in fb:

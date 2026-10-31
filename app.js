@@ -137,13 +137,26 @@ function weeks() {
   return Array.from({ length: count }, (_, i) => { const s = addDays(start, i * 7); return { n: i + 1, ws: iso(s), we: iso(addDays(s, 6)) }; });
 }
 const currentWeek = () => { const t = today(), w = weeks(); return w.find(x => t >= x.ws && t <= x.we) || (t < w[0].ws ? w[0] : w[w.length - 1]); };
-// The plan as stored: item ids and named slots ("slot:<id>") in order. A slot holds the items after it, up to the next slot.
+// The plan: prefs.plan is the top level in order (item ids and "slot:<id>"); prefs.planSlots holds each slot's
+// name, cards and fold. A slot is a named group of cards that moves as one. The first version kept a slot's cards
+// after it in prefs.plan; that's read the same way.
 const isSlot = e => String(e).startsWith('slot:');
-const slotNames = () => S.prefs.planSlots || {};
-const planRaw = () => (S.prefs.plan || []).filter(e => isSlot(e) ? slotNames()[e] != null : item(e));
-const slotEnd = (raw, i) => { const j = raw.findIndex((e, k) => k > i && isSlot(e)); return j < 0 ? raw.length : j; };
-const slotItems = id => { const raw = planRaw(), i = raw.indexOf(id); return i < 0 ? [] : raw.slice(i + 1, slotEnd(raw, i)).map(item); };
-const planIDs = () => planRaw().filter(e => !isSlot(e));
+function planModel() {
+  const stored = S.prefs.planSlots || {}, entries = [], slots = {}; let legacy = null;
+  for (const e of S.prefs.plan || []) {
+    if (isSlot(e) && stored[e] != null) {
+      const v = stored[e];
+      slots[e] = typeof v === 'object' ? { name: v.name || '', items: (v.items || []).filter(x => item(x)), collapsed: !!v.collapsed } : { name: String(v), items: [], collapsed: false };
+      legacy = typeof v === 'object' ? null : e; entries.push(e);
+    } else if (item(e)) { if (legacy) slots[legacy].items.push(e); else entries.push(e); }
+  }
+  return { entries, slots };
+}
+const savePlan = m => optimistic('settings', 'prefs', p => { p.plan = m.entries; p.planSlots = m.slots; return p; });
+const slotNames = () => Object.fromEntries(Object.entries(planModel().slots).map(([k, v]) => [k, v.name]));
+const slotItems = id => (planModel().slots[id]?.items || []).map(item);
+const slotOf = id => Object.entries(planModel().slots).find(([, v]) => v.items.includes(id))?.[0];
+const planIDs = () => { const m = planModel(); return m.entries.flatMap(e => isSlot(e) ? m.slots[e].items : [e]); };
 const planItems = () => planIDs().map(item).filter(i => i && !i.hidden);
 const attendance = its => { const held = its.filter(i => isSession(i) && i.type !== 'Online unit' && i.date <= today()); return { attended: held.filter(i => status(i) === 'attended').length, held: held.length }; };
 const isRTL = s => { let r = 0, l = 0; for (const ch of String(s || '')) { if (/[֐-ࣿיִ-﷿]/.test(ch)) r++; else if (/\p{L}/u.test(ch)) l++; } return r > l; };
@@ -206,27 +219,39 @@ function setStatus(id, value, announce = true) {
   if (['done', 'attended', 'reviewed'].includes(value) && S.prefs.askReflection !== false && !it.reflection) setTimeout(() => openSheet({ kind: 'reflect', id }), 500);
 }
 const inPlan = id => planIDs().includes(id);
-const togglePlan = id => setPref('plan', inPlan(id) ? planRaw().filter(x => x !== id) : [...planRaw(), id]);
-// Up or down one place. A card can cross into the next slot; a slot moves past the next slot with all its cards.
+function togglePlan(id) {
+  const m = planModel();
+  if (inPlan(id)) { m.entries = m.entries.filter(x => x !== id); for (const k in m.slots) m.slots[k].items = m.slots[k].items.filter(x => x !== id); }
+  else m.entries.push(id);
+  savePlan(m);
+}
+// Up or down one place: on the top level a card or a whole slot; inside a slot, within it.
 function movePlanEntry(e, dir) {
-  const raw = planRaw(), i = raw.indexOf(e); if (i < 0) return;
-  if (!isSlot(e)) { const j = i + dir; if (j < 0 || j >= raw.length) return; [raw[i], raw[j]] = [raw[j], raw[i]]; return setPref('plan', raw); }
-  const end = slotEnd(raw, i), block = raw.slice(i, end), rest = [...raw.slice(0, i), ...raw.slice(end)];
-  if (dir < 0) { if (i === 0) return; let st = i - 1; while (st > 0 && !isSlot(raw[st])) st--; rest.splice(st, 0, ...block); }
-  else { if (end >= raw.length) return; rest.splice(i + slotEnd(raw, end) - end, 0, ...block); }
-  setPref('plan', rest);
+  const m = planModel(), s = isSlot(e) ? null : slotOf(e), list = s ? m.slots[s].items : m.entries, i = list.indexOf(e), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]]; savePlan(m);
+}
+// Into a slot (at its end), or out of one (null: just below the slot it was in).
+function moveToSlot(id, target) {
+  const m = planModel(), from = slotOf(id); if (from === target) return;
+  m.entries = m.entries.filter(x => x !== id); if (from) m.slots[from].items = m.slots[from].items.filter(x => x !== id);
+  if (target) m.slots[target].items.push(id);
+  else { const at = from ? m.entries.indexOf(from) + 1 : m.entries.length; m.entries.splice(at, 0, id); }
+  savePlan(m);
 }
 function addSlot() {
-  const name = (prompt('Name the slot, like “Sunday morning”. It goes at the bottom; move cards into it.') || '').trim(); if (!name) return;
-  const id = 'slot:' + Math.random().toString(36).slice(2, 10);
-  optimistic('settings', 'prefs', p => { p.planSlots = { ...(p.planSlots || {}), [id]: name }; p.plan = [...(p.plan || []), id]; return p; });
+  const name = (prompt('Name the slot, like “Sunday morning”. Then move cards into it with ⋯ on a card.') || '').trim(); if (!name) return;
+  const m = planModel(), id = 'slot:' + Math.random().toString(36).slice(2, 10);
+  m.slots[id] = { name, items: [], collapsed: false }; m.entries.unshift(id); savePlan(m);
 }
 function renameSlot(id) {
-  const name = (prompt('Rename the slot', slotNames()[id] || '') || '').trim(); if (!name) return;
-  optimistic('settings', 'prefs', p => { p.planSlots = { ...(p.planSlots || {}), [id]: name }; return p; });
+  const m = planModel(), name = (prompt('Rename the slot', m.slots[id]?.name || '') || '').trim(); if (!name) return;
+  m.slots[id].name = name; savePlan(m);
 }
-// Deleting a slot keeps its cards; they join whatever is above.
-const deleteSlot = id => optimistic('settings', 'prefs', p => { p.plan = (p.plan || []).filter(e => e !== id); const n = { ...(p.planSlots || {}) }; delete n[id]; p.planSlots = n; return p; });
+const foldSlot = id => { const m = planModel(); m.slots[id].collapsed = !m.slots[id].collapsed; savePlan(m); };
+// Deleting a slot keeps its cards: they take its place in the plan.
+function deleteSlot(id) { const m = planModel(), i = m.entries.indexOf(id); if (i < 0) return; m.entries.splice(i, 1, ...m.slots[id].items); delete m.slots[id]; savePlan(m); }
+function clearDone() { const m = planModel(), open = x => !isHandled(item(x)); m.entries = m.entries.filter(e => isSlot(e) || open(e)); for (const k in m.slots) m.slots[k].items = m.slots[k].items.filter(open); savePlan(m); }
 const markSeen = ids => ids.forEach(id => optimistic('update', id, d => { d.seen = true; return d; }));
 
 // ---------- Feed ----------
@@ -439,23 +464,25 @@ function scheduleScreen() {
   ${!e.length ? '<div class="empty" style="text-align:center;padding:40px 0">Nothing on this day.</div>' : ''}`;
 }
 function planScreen() {
-  const raw = planRaw(), plan = planItems(), open = plan.filter(i => !isHandled(i)).length, names = slotNames();
+  const m = planModel(), ids = planIDs(), plan = planItems(), open = plan.filter(i => !isHandled(i)).length;
   const btn = (attrs, label, text) => `<button class="round" style="width:32px;height:32px;font-size:14px" ${attrs} aria-label="${label}" title="${label}">${text}</button>`;
-  let n = 0;
-  const rows = raw.map((e, i) => {
-    if (isSlot(e)) {
-      const its = slotItems(e).filter(Boolean), left = its.filter(x => !isHandled(x));
-      return `<div class="slot-head"><span class="grow"><b>${esc(names[e])}</b><small>${its.length ? left.length ? `${left.length} to go` : 'All done' : 'Empty: move cards here'}</small></span>
-        ${btn(`data-pmove="${esc(e)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}`, 'Move slot up', '↑')}${btn(`data-pmove="${esc(e)}" data-dir="1" ${slotEnd(raw, i) >= raw.length ? 'disabled' : ''}`, 'Move slot down', '↓')}
-        ${btn(`data-slotmenu="${esc(e)}"`, `${esc(names[e])} options`, '⋯')}</div>`;
-    }
-    const it = item(e); if (it.hidden) return ''; n++;
-    return `<div style="display:flex;gap:8px;align-items:center"><span style="width:20px;text-align:center;color:var(--label2);font-weight:600">${n}</span><div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
-    <div style="display:grid;gap:2px">${btn(`data-pmove="${esc(e)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}`, 'Move up', '↑')}${btn(`data-pmove="${esc(e)}" data-dir="1" ${i === raw.length - 1 ? 'disabled' : ''}`, 'Move down', '↓')}</div></div>`;
+  // The number, with ⋯ (move to a slot, take out, remove) under it; ↑ ↓ on the right.
+  const num = id => `<span class="pnum"><b>${ids.indexOf(id) + 1}</b><button data-cardmenu="${esc(id)}" aria-label="More" title="Move to a slot, take out, remove">⋯</button></span>`;
+  const cardRow = (it, list, k) => `<div style="display:flex;gap:6px;align-items:center">${num(it.id)}<div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
+    <div style="display:grid;gap:2px">${btn(`data-pmove="${esc(it.id)}" data-dir="-1" ${k === 0 ? 'disabled' : ''}`, 'Move up', '↑')}${btn(`data-pmove="${esc(it.id)}" data-dir="1" ${k === list.length - 1 ? 'disabled' : ''}`, 'Move down', '↓')}</div></div>`;
+  const bar = its => { const cs = [...new Set(its.map(i => i.c))];
+    return `<div class="slot-bar">${cs.map(c => { const mine = its.filter(i => i.c === c), d = mine.filter(isHandled).length;
+      return `<span style="flex:${mine.length};background:color-mix(in srgb, ${color(c)} 25%, transparent)" title="${esc(short(course(c)))}: ${d} of ${mine.length} done"><i style="width:${d / mine.length * 100}%;background:${color(c)}"></i></span>`; }).join('')}</div>`; };
+  const rows = m.entries.map((e, k) => {
+    if (!isSlot(e)) { const it = item(e); return it.hidden ? '' : cardRow(it, m.entries, k); }
+    const sl = m.slots[e], its = sl.items.map(item).filter(i => i && !i.hidden), done = its.filter(isHandled).length;
+    return `<div class="slot"><div class="slot-head"><button class="grow slot-fold" data-slotfold="${esc(e)}" aria-expanded="${!sl.collapsed}"><span class="chev ${sl.collapsed ? '' : 'open'}"></span><span><b>${esc(sl.name)}</b><small>${its.length ? done === its.length ? `All ${its.length} done` : `${done} of ${its.length} done` : 'Empty'}</small></span></button>
+      ${btn(`data-pmove="${esc(e)}" data-dir="-1" ${k === 0 ? 'disabled' : ''}`, 'Move slot up', '↑')}${btn(`data-pmove="${esc(e)}" data-dir="1" ${k === m.entries.length - 1 ? 'disabled' : ''}`, 'Move slot down', '↓')}${btn(`data-slotmenu="${esc(e)}"`, `${esc(sl.name)} options`, '⋯')}</div>
+      ${its.length ? bar(its) : ''}${sl.collapsed ? '' : its.length ? `<div class="cards">${its.map((it, j) => cardRow(it, its, j)).join('')}</div>` : '<div style="color:var(--label2);font-size:15px;margin-top:8px">Move cards here with ⋯ on a card.</div>'}</div>`;
   }).join('');
   return `<button class="back" data-back>‹ Overview</button><div class="head"><div><div class="sub">${plan.length ? `${open} to go${plan.length - open ? ` · ${plan.length - open} done` : ''}` : 'Your order of work'}</div><h2>Plan</h2></div>
   <div class="hbtns">${plan.length > open ? '<button class="pill" data-cleardone>Clear done</button>' : ''}<button class="pill" data-addslot>+ Slot</button></div></div>
-  ${raw.length ? `<div class="cards">${rows}</div>`
+  ${m.entries.length ? `<div class="cards">${rows}</div>`
     : '<div class="group pad" style="text-align:center"><b>No plan yet</b><p style="color:var(--label2)">Put the tasks and lectures you want to get through in order. Open any card and tap the plan button. Group them into slots like “Sunday morning” with + Slot.</p></div>'}`;
 }
 // The Courses tab: every course with how caught up it is.
@@ -514,6 +541,11 @@ function renderSheet() {
   else if (s.kind === 'card') html = cardSheet(s.id);
   else if (s.kind === 'questions') html = questionSheet();
   else if (s.kind === 'week') html = weekSheet(s);
+  else if (s.kind === 'cardmenu') { const m = planModel(), from = slotOf(s.id), it = item(s.id);
+    html = `<div class="bar-top"><b dir="auto">${esc(it?.title || '')}</b><button class="pill" data-close>Done</button></div>
+    <div class="group">${m.entries.filter(e => isSlot(e) && e !== from).map(e => `<button class="row" data-toslot="${esc(s.id)}" data-slot="${esc(e)}"><span class="ico">▤</span><span class="grow">Move to ${esc(m.slots[e].name)}</span></button>`).join('')}
+    ${from ? `<button class="row" data-toslot="${esc(s.id)}" data-slot=""><span class="ico">↗</span><span class="grow">Take out of ${esc(m.slots[from].name)}</span></button>` : ''}
+    <button class="row" data-plan="${esc(s.id)}" style="color:var(--red)"><span class="ico" style="color:var(--red)">−</span><span class="grow">Remove from plan</span></button></div>`; }
   else if (s.kind === 'slot') html = `<div class="bar-top"><b>${esc(slotNames()[s.id] || '')}</b><button class="pill" data-close>Done</button></div>
     <div class="group"><button class="row" data-slotrename="${esc(s.id)}"><span class="ico">✎</span><span class="grow">Rename</span></button><button class="row" data-slotask="${esc(s.id)}"><span class="ico">✦</span><span class="grow">Ask Claude about it</span></button><button class="row" data-slotdel="${esc(s.id)}" style="color:var(--red)"><span class="ico" style="color:var(--red)">✕</span><span class="grow">Delete slot (keeps the cards)</span></button></div>`;
   $('#layer').innerHTML = `<div class="scrim" data-scrim><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div></div>`;
@@ -647,15 +679,18 @@ document.addEventListener('click', e => {
   if (d.day) { closeSheet(); S.day = d.day === 'today' ? null : d.day; S.tab = 'schedule'; S.route = []; return render(); }
   if (d.close !== undefined) return closeSheet();
   if (d.status) { setStatus(d.status, d.val); if (S.sheet?.kind === 'item' && !(['done', 'attended', 'reviewed'].includes(d.val))) renderSheet(); else if (S.sheet?.kind === 'item') closeSheet(); return; }
-  if (d.plan) { togglePlan(d.plan); return; }
+  if (d.plan) { if (S.sheet?.kind === 'cardmenu') closeSheet(); togglePlan(d.plan); return; }
   if (d.pmove) return movePlanEntry(d.pmove, Number(d.dir));
-  if (d.cleardone !== undefined) return setPref('plan', planRaw().filter(e => isSlot(e) || !isHandled(item(e))));
+  if (d.cleardone !== undefined) return clearDone();
+  if (d.slotfold) return foldSlot(d.slotfold);
+  if (d.cardmenu) return openSheet({ kind: 'cardmenu', id: d.cardmenu });
+  if (d.toslot) { closeSheet(); return moveToSlot(d.toslot, d.slot || null); }
   if (d.addslot !== undefined) return addSlot();
   if (d.slotmenu) return openSheet({ kind: 'slot', id: d.slotmenu });
   if (d.slotrename) { closeSheet(); return renameSlot(d.slotrename); }
   if (d.slotdel) { closeSheet(); return deleteSlot(d.slotdel); }
   if (d.slotask) { closeSheet(); S.chatDraft = { text: `About my plan slot “${slotNames()[d.slotask]}”: `, items: slotItems(d.slotask).filter(Boolean).map(i => i.id) }; return go('chat'); }
-  if (d.addall) { const add = d.addall.split(','); setPref('plan', [...planRaw(), ...add.filter(x => !inPlan(x))]); return toast(add.length === 1 ? 'Added to your plan' : `Added ${add.length} to your plan`); }
+  if (d.addall) { const add = d.addall.split(','), m = planModel(); m.entries.push(...add.filter(x => !inPlan(x))); savePlan(m); return toast(add.length === 1 ? 'Added to your plan' : `Added ${add.length} to your plan`); }
   if (d.unattach !== undefined) { S.chatDraft = { ...(S.chatDraft || {}), items: [] }; return render(); }
   if (d.chatsend !== undefined) return sendChat();
   if (d.allseen !== undefined) { feedCards().forEach(seenCard); return; }
