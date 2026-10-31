@@ -154,6 +154,17 @@ select { font: inherit; color: var(--label2); background: transparent; border: 0
 .glyph.task { border-radius: 5px; }
 .glyph.filled { background: currentColor; }
 .glyph.filled span { color: var(--card); }
+button.week-row { width: 100%; text-align: left; color: inherit; }
+.week-row .chev::after { content: "›"; color: var(--label3); font-size: 22px; line-height: 1; }
+.head .hbtn { width: 40px; height: 40px; border-radius: 50%; background: var(--card); box-shadow: var(--shadow); display: grid; place-items: center; color: var(--label); flex: none; }
+.note-badge { color: var(--label2); font-size: 12px; margin-left: 4px; flex: none; }
+.search { width: 100%; box-sizing: border-box; font: inherit; font-size: 17px; padding: 9px 14px; border-radius: 12px; border: 0; background: var(--fill2); color: var(--label); margin: 0 0 16px; }
+.note-row { align-items: flex-start; }
+.note-row + .note-row::before { left: 16px; }
+.note-row .nt { display: flex; justify-content: space-between; gap: 8px; }
+.note-row .nb { display: block; font-size: 15px; margin-top: 4px; white-space: pre-wrap; }
+.note-row .nb.dim { color: var(--label2); }
+.sheet .foot { font-size: 13px; color: var(--label2); margin: -10px 18px 18px; }
 .post { white-space: pre-wrap; font-size: 15px; }
 .summary { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(175,82,222,.1); font-size: 15px; }
 .day-strip { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin: 0 -4px 10px; padding-bottom: 2px; }

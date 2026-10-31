@@ -228,7 +228,13 @@ const ROW_ICONS = {
   play: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9l5 3-5 3z" fill="currentColor"/>'),
   megaphone: svg('<path d="M3 10v4h4l8 4V6L7 10z"/><path d="M18 9a4 4 0 010 6"/>'),
   doc: svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>'),
+  note: svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/>'),
+  cal: svg('<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
 };
+// What you wrote yourself: a note you typed (the sync's own notes don't count) and what you said about how it went.
+const yourNote = it => (it.locked || []).includes('note') ? (it.note || '').trim() : '';
+const reflectionNote = it => it.reflection?.note || '';
+const hasYourNotes = it => !!(yourNote(it) || reflectionNote(it));
 const ICONS = {
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4" stroke-linecap="round"/></svg>',
   schedule: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
@@ -272,7 +278,7 @@ function card(it, { trailing = 'date', showCourse = true, showPlanTag = true, ti
   return `<div class="card ${bg}" data-open="${esc(it.id)}" role="button" tabindex="0">
     <button class="circle ${cls}" style="color:${col}" data-toggle="${esc(it.id)}" aria-label="${isHandled(it) ? 'Mark as not done' : isSession(it) ? 'Mark watched' : 'Mark done'}" ${key === 'open' ? 'disabled' : ''}><span>${g}</span></button>
     <div class="cbody"><div class="l1"><div class="title ${open ? '' : 'dim'}" dir="auto">${esc(title || it.title)}</div><div class="cue ${strong ? 'strong' : ''}" style="${cueColor ? `color:${cueColor};font-weight:500` : ''}">${esc(cue)}</div></div>
-    <div class="l2">${tags.join('')}<span style="overflow:hidden;text-overflow:ellipsis">${ctx}</span></div>${progress}${note}</div></div>`;
+    <div class="l2">${tags.join('')}<span style="overflow:hidden;text-overflow:ellipsis">${ctx}</span>${hasYourNotes(it) && !note ? '<span class="note-badge" aria-label="Has your note">✎</span>' : ''}</div>${progress}${note}</div></div>`;
 }
 const cardsOr = (list, empty, opts) => (list.length ? `<div class="cards">${list.map(i => card(i, opts)).join('')}</div>` : `<div class="empty">${esc(empty)}</div>`);
 const seg = (name, options, current) => `<div class="seg" role="tablist">${options.map(([v, l]) => `<button role="tab" class="${v === current ? 'on' : ''}" data-seg="${name}" data-val="${v}">${esc(l)}</button>`).join('')}</div>`;
@@ -285,7 +291,7 @@ function overview() {
   const plan = planItems().filter(i => !isHandled(i)), cards = feedCards(), qs = S.questions.filter(q => (q.status || 'open') === 'open');
   const list = S.list === 'plan' ? cardsOr(plan.slice(0, 8), 'Nothing planned. Open a task and tap the plan button.', { showPlanTag: false })
     : S.list === 'tasks' ? cardsOr(tasks, 'Nothing open right now.') : cardsOr(lectures, 'You’re caught up on lectures.');
-  return `<div class="head"><div><div class="sub">${esc(longDate())}</div><h1>Overview</h1></div></div>
+  return `<div class="head"><div><div class="sub">${esc(longDate())}</div><h1>Overview</h1></div><button class="hbtn" data-go="notes" aria-label="Your notes" title="Your notes">${ROW_ICONS.note}</button></div>
   <div class="group pad"><button class="rings-top" style="width:100%" data-go="progress"><b>${s.percent}</b><span style="color:var(--label2);font-size:15px">caught up</span><span style="flex:1"></span><span style="color:var(--label2);font-size:15px">Week ${w.n} of ${weeks().length}</span></button>
     <div class="rings" style="grid-template-columns:repeat(${cols},1fr)">${courses.map(c => { const cs = catchUp(items.filter(i => i.c === c.id)); return `<button class="ring-item" data-course="${esc(c.id)}" aria-label="${esc(displayName(c))}, ${cs.percent} caught up">${ringWithText(cs.fraction, 52, 6, color(c.id), cs.percent, 11)}<span class="name" style="color:${color(c.id)}">${esc(short(c))}</span><span class="meta">${cs.behind ? `${cs.behind} to watch` : 'caught up'}</span></button>`; }).join('')}</div></div>
   ${qs.length ? `<button class="group pad qbanner" style="width:100%;text-align:left" data-sheet="questions"><span class="spark">✦</span><span class="grow"><b>${qs.length === 1 ? 'Claude has a question' : `Claude has ${qs.length} questions`}</b><br><span style="color:var(--label2);font-size:15px">A few taps help Claude rank things for you</span></span><span style="color:var(--accent);font-weight:600">Answer</span></button>` : ''}
@@ -325,7 +331,7 @@ function courseScreen(id) {
   let body;
   if (tab === 'weeks') {
     const cur = currentWeek();
-    body = `<div class="cards">${weeks().map(w => { const ev = its.filter(i => i.date >= w.ws && i.date <= w.we); return `<div class="week-row"><button class="wk" data-day="${w.ws}" style="text-align:left;color:${w.n === cur.n ? 'var(--accent)' : 'inherit'}">Week ${w.n}<small>${esc(dm(w.ws))}</small></button><div class="glyphs">${ev.length ? ev.slice(0, 8).map(i => { const k = state(i).key, [g, cls] = CIRCLE[k] || ['', '']; return `<button class="glyph ${isSession(i) ? '' : 'task'} ${cls}" style="color:${k === 'open' ? 'var(--label3)' : k === 'closed' || k === 'wont' ? 'var(--red)' : color(i.c)}" data-open="${esc(i.id)}" title="${esc(i.title)}: ${esc(state(i).text)}"><span>${g}</span></button>`; }).join('') : '<span style="color:var(--label3);font-size:15px">Nothing this week</span>'}</div>${ev.length ? `<span style="color:var(--label2);font-size:15px">${ev.filter(isHandled).length}/${ev.length}</span>` : ''}</div>`; }).join('')}</div>`;
+    body = `<div class="cards">${weeks().map(w => { const ev = its.filter(i => i.date >= w.ws && i.date <= w.we); return `<button class="week-row" data-week="${w.ws}" aria-label="Week ${w.n}, ${ev.filter(isHandled).length} of ${ev.length} done"><span class="wk" style="color:${w.n === cur.n ? 'var(--accent)' : 'inherit'}">Week ${w.n}<small>${esc(dm(w.ws))}</small></span><span class="glyphs">${ev.length ? ev.slice(0, 8).map(glyph).join('') : '<span style="color:var(--label3);font-size:15px">Nothing this week</span>'}</span>${ev.length ? `<span style="color:var(--label2);font-size:15px">${ev.filter(isHandled).length}/${ev.length}</span>` : ''}<span class="chev"></span></button>`; }).join('')}</div>`;
   } else {
     const list = tab === 'lectures' ? its.filter(isSession) : tab === 'exams' ? its.filter(isExam) : its.filter(i => !isSession(i));
     body = cardsOr(list, tab === 'exams' ? 'No exams found.' : tab === 'lectures' ? 'No lectures yet.' : 'No tasks yet.', { showCourse: false });
@@ -335,8 +341,40 @@ function courseScreen(id) {
   <div class="group pad metrics">${ringWithText(s.fraction, 76, 9, color(id), s.percent, 15)}${metric(`${watched}/${held.length}`, 'watched')}${att.attended || (c.grading || []).some(g => /attend/i.test(g.label || '')) ? metric(`${att.attended}/${att.held}`, 'attended') : ''}${next ? metric(dm(next.date), 'next due') : metric(String(s.behind), 'to watch')}</div>
   <div class="group">${/^https?:/.test(c.moodle || '') ? link(c.moodle, ROW_ICONS.cap, 'Moodle') : ''}${/^https?:/.test(c.recordings || '') ? link(c.recordings, ROW_ICONS.play, 'Recordings') : ''}
     <button class="row" data-go="news:${esc(id)}"><span class="ico">${ROW_ICONS.megaphone}</span><span class="grow">Announcements</span>${unread ? `<span style="color:var(--accent)">${unread} new</span>` : ''}<span class="chev"></span></button>
-    <button class="row" data-go="info:${esc(id)}"><span class="ico">${ROW_ICONS.doc}</span><span class="grow">Notes and grading</span><span class="chev"></span></button></div>
+    <button class="row" data-go="info:${esc(id)}"><span class="ico">${ROW_ICONS.doc}</span><span class="grow">Grading and course notes</span><span class="chev"></span></button>
+    ${its.some(hasYourNotes) ? `<button class="row" data-go="notes:${esc(id)}"><span class="ico">${ROW_ICONS.note}</span><span class="grow">Your notes</span><span class="val">${its.filter(hasYourNotes).length}</span><span class="chev"></span></button>` : ''}</div>
   <div class="tray">${seg('courseTab', [['tasks', 'Tasks'], ['weeks', 'Weeks'], ['lectures', 'Lectures'], ['exams', 'Exams']], tab)}${body}</div>`;
+}
+// One event as a status symbol in the course color: circles for sessions, rounded squares for tasks.
+function glyph(i) {
+  const k = state(i).key, [g, cls] = inProgress(i) && ['todo', 'due', 'watch'].includes(k) ? ['◐', ''] : CIRCLE[k] || ['', ''];
+  return `<span class="glyph ${isSession(i) ? '' : 'task'} ${cls}" style="color:${k === 'open' ? 'var(--label3)' : k === 'closed' || k === 'wont' ? 'var(--red)' : color(i.c)}" title="${esc(i.title)}: ${esc(state(i).text)}"><span>${g}</span></span>`;
+}
+// Every note you wrote, by course; tapping one opens its task or lecture. `id` limits it to one course.
+function notesScreen(id) {
+  const q = (S.notesQuery || '').trim().toLowerCase();
+  const its = S.items.filter(i => !i.hidden && hasYourNotes(i) && (!id || i.c === id))
+    .filter(i => !q || [i.title, yourNote(i), reflectionNote(i)].some(x => (x || '').toLowerCase().includes(q)))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const cs = (id ? [course(id)] : visibleCourses()).filter(c => c && its.some(i => i.c === c.id));
+  return `<button class="back" data-back>‹ ${id ? esc(short(course(id))) : 'Overview'}</button><div class="head"><h2>${id ? `${esc(short(course(id)))} notes` : 'Your notes'}</h2></div>
+  <input class="search" type="search" placeholder="Search your notes" value="${esc(S.notesQuery || '')}" data-notesq>
+  ${its.length ? cs.map(c => `${id ? '' : `<div class="group-title" style="color:${color(c.id)}">${esc(displayName(c))}</div>`}<div class="group">${its.filter(i => i.c === c.id).map(i => `<button class="row note-row" data-open="${esc(i.id)}"><span class="grow"><span class="nt"><b dir="auto">${esc(i.title)}</b><span class="val">${esc(dm(i.date))}</span></span>${yourNote(i) ? `<span class="nb" dir="auto">${esc(yourNote(i))}</span>` : ''}${reflectionNote(i) ? `<span class="nb dim" dir="auto">💬 ${esc(reflectionNote(i))}</span>` : ''}</span></button>`).join('')}</div>`).join('')
+    : `<div class="empty">${q ? 'No matches.' : 'No notes yet. Open a task or lecture and write where you left off. Your notes gather here.'}</div>`}`;
+}
+// One week of a course: each event spelled out with its symbol, then what the symbols mean.
+function weekSheet(s) {
+  const c = course(s.c), w = weeks().find(x => x.ws === s.ws); if (!c || !w) return '';
+  const ev = S.items.filter(i => i.c === c.id && !i.hidden && i.date >= w.ws && i.date <= w.we).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+  const done = ev.filter(isHandled).length;
+  const leg = (cls, g, text, col) => `<div class="row"><span class="glyph ${cls}" style="color:${col || color(c.id)}"><span>${g}</span></span><span class="grow">${text}</span></div>`;
+  return `<div class="bar-top"><span></span><div style="text-align:center"><b>${esc(short(c))} · Week ${w.n}</b><div style="font-size:12px;color:var(--label2)">${esc(dm(w.ws))} – ${esc(dm(w.we))}</div></div><button class="pill" data-close>Done</button></div>
+  ${ev.length ? `<div class="group-title">${done} of ${ev.length} done</div>` : ''}<div class="group">${ev.length ? ev.map(i => { const st = state(i), day = `${dow(i.date)} ${dm(i.date)}`;
+    return `<button class="row" data-open="${esc(i.id)}">${glyph(i)}<span class="grow"><span dir="auto" style="display:block">${esc(i.title)}</span><span style="font-size:15px;color:var(--label2)">${i.title.startsWith(i.type) ? day : `${esc(i.type)} · ${day}`}</span></span><span style="font-size:15px;font-weight:500;color:${st.key === 'done' ? 'var(--green)' : st.key === 'reviewed' ? 'var(--mint)' : st.key === 'closed' || st.key === 'wont' ? 'var(--red)' : 'var(--label2)'}">${esc(st.text)}</span></button>`; }).join('') : '<div class="row val">Nothing this week.</div>'}</div>
+  <div class="group"><button class="row" data-day="${w.ws}"><span class="ico">${ROW_ICONS.cal}</span><span class="grow" style="color:var(--accent)">Show in Schedule</span></button></div>
+  <div class="group-title">Lectures and tutorials</div><div class="group">${leg('', '', 'To watch')}${leg('', '◐', 'In progress: you stopped partway')}${leg('filled', '✓', 'Watched or attended')}${leg('filled', '~', 'Skimmed')}${leg('locked', '', 'Upcoming', 'var(--label3)')}${leg('', '✕', 'Won’t watch', 'var(--red)')}</div>
+  <div class="group-title">Tasks and exams</div><div class="group">${leg('task', '', 'To do')}${leg('task', '◐', 'In progress')}${leg('task filled', '✓', 'Done')}${leg('task filled', '~', 'Went over it')}${leg('task locked', '', 'Not open yet', 'var(--label3)')}${leg('task filled', '!', 'Missed: the deadline passed', 'var(--red)')}${leg('task', '✕', 'Won’t do', 'var(--red)')}</div>
+  <div class="foot">Symbols are in the course color. Gray means it hasn’t started yet, red means it was missed or skipped.</div>`;
 }
 function newsScreen(id) {
   const c = course(id), posts = S.updates.filter(u => u.kind === 'announcement' && u.course === id).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
@@ -398,6 +436,7 @@ function renderSheet() {
   else if (s.kind === 'reflect') html = reflectSheet(s);
   else if (s.kind === 'card') html = cardSheet(s.id);
   else if (s.kind === 'questions') html = questionSheet();
+  else if (s.kind === 'week') html = weekSheet(s);
   $('#layer').innerHTML = `<div class="scrim" data-scrim><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div></div>`;
 }
 function itemSheet(id) {
@@ -482,6 +521,7 @@ function render() {
   else if (r?.startsWith('course:')) html = courseScreen(r.slice(7));
   else if (r?.startsWith('news:')) html = newsScreen(r.slice(5));
   else if (r?.startsWith('info:')) html = infoScreen(r.slice(5));
+  else if (r === 'notes' || r?.startsWith('notes:')) html = notesScreen(r.slice(6));
   else html = { overview, schedule: scheduleScreen, plan: planScreen, settings: settingsScreen }[S.tab]();
   $('#app').innerHTML = html;
   const tabs = $('#tabs'); tabs.classList.remove('hidden');
@@ -517,12 +557,13 @@ document.addEventListener('click', e => {
   if (d.open) { if (t.tagName === 'A') return; return openSheet({ kind: 'item', id: d.open }); }
   if (d.openitem) return openSheet({ kind: 'item', id: d.openitem });
   if (d.card) return openSheet({ kind: 'card', id: d.card });
+  if (d.week) return openSheet({ kind: 'week', c: S.route[S.route.length - 1].slice(7), ws: d.week });
   if (d.tab) { S.tab = d.tab; S.route = []; closeSheet(); window.scrollTo(0, 0); return render(); }
   if (d.go) { closeSheet(); return go(d.go); }
   if (d.back !== undefined) return back();
   if (d.course) { closeSheet(); S.tab = 'overview'; S.route = [`course:${d.course}`]; S.courseTab = 'tasks'; window.scrollTo(0, 0); return render(); }
   if (d.seg) { S[d.seg] = d.val; return render(); }
-  if (d.day) { S.day = d.day === 'today' ? null : d.day; S.tab = 'schedule'; S.route = []; return render(); }
+  if (d.day) { closeSheet(); S.day = d.day === 'today' ? null : d.day; S.tab = 'schedule'; S.route = []; return render(); }
   if (d.close !== undefined) return closeSheet();
   if (d.status) { setStatus(d.status, d.val); if (S.sheet?.kind === 'item' && !(['done', 'attended', 'reviewed'].includes(d.val))) renderSheet(); else if (S.sheet?.kind === 'item') closeSheet(); return; }
   if (d.plan) { togglePlan(d.plan); return; }
@@ -542,6 +583,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.stop) { const v = Number(t.value); $('#mins').textContent = `${v} of ${item(t.dataset.stop)?.duration || 90} min`; }
   if (t.dataset.reflectNote !== undefined) { S.sheet.a = S.sheet.a || {}; S.sheet.a.note = t.value; }
+  if (t.dataset.notesq !== undefined) { S.notesQuery = t.value; render(); const q = $('[data-notesq]'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 });
 document.addEventListener('change', e => {
   const t = e.target;

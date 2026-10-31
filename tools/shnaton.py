@@ -5,7 +5,8 @@ Usage: shnaton.py [--dry-run] [--force]
   --dry-run  print what would change, write nothing
   --force    run even if the Shnaton was already checked today (normally once a day; the hourly job calls this)
 Only reads from HUJI: the Shnaton site's own JSON API (the one shnaton.huji.ac.il/course/<code> calls).
-For each visible course it updates existing exam items: x-<course>-final (the written exam's מועד א') and
+For each visible course it saves the semester's lecture and tutorial groups (course 'classGroups': weekday, hours, room,
+teacher; shown when you pick your group) and updates existing exam items: x-<course>-final (the written exam's מועד א') and
 x-<course>-final-b (its מועד ב', optional; created when missing), and x-<course>-q1, -q2 ... (the midterms, in date
 order; their מועד ב' goes in the note unless a -q1-b item exists). Fields the student edited ('locked') are kept, and
 nothing is ever deleted. A date or time change adds a 'date' card to the app's feed.
@@ -62,6 +63,31 @@ def span(t, end):
     mins = (dt.datetime.strptime(end, '%H:%M') - dt.datetime.strptime(t, '%H:%M')).seconds // 60
     h, m = divmod(mins, 60)
     return f'{t}–{end} ({h} h' + (f' {m} min)' if m else ')')
+
+
+def hm(ms):
+    return f'{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}' if ms is not None else ''
+
+
+def groups(code, year, period):
+    """The semester's lecture and tutorial groups: [{type, group, day (0 = Sunday), time, end, room, teacher}]."""
+    kinds = {'1': 'Lecture', '2': 'Tutorial'}  # שעור, תרגיל
+    out = []
+    for c in get(f'/courses/code/{code}?year={year}'):
+        for g in get(f'/courses/groups-with-sessions?year={year}&courseIds={c["id"]}').get(str(c['id']), []):
+            typ = kinds.get(g.get('studySessionTypeCode'))
+            if not typ or g.get('period') not in (period, None) or '-' not in (g.get('code') or ''):
+                continue
+            num = str(int(g['code'].split('-')[1])) if g['code'].split('-')[1].isdigit() else g['code'].split('-')[1]
+            for ss in g.get('studySessions') or []:
+                if ss.get('dayOfWeek') is None or ss.get('startTime') is None:
+                    continue
+                room = (ss.get('room') or {}).get('name') or {}
+                out.append({'type': typ, 'group': num, 'day': ss['dayOfWeek'], 'time': hm(ss['startTime']), 'end': hm(ss.get('endTime')),
+                            'room': room.get('en') or room.get('he') or '',
+                            'teacher': ', '.join((t.get('name') or {}).get('en') or (t.get('name') or {}).get('he') or '' for t in ss.get('teachers') or [])})
+    out.sort(key=lambda x: (x['type'], int(x['group']) if x['group'].isdigit() else 999, x['day'], x['time']))
+    return out
 
 
 def exams(code, year, period):
@@ -139,13 +165,17 @@ def main():
     # Semester A (period 1): October to January, its exams until March. Semester B (period 2): from April.
     period = 1 if TODAY.month >= 8 or TODAY.month <= 3 else 2
 
-    changed, updates, summary, failed = {}, {}, [], []
+    changed, updates, summary, failed, course_changes = {}, {}, [], [], {}
     for cid, c in sorted(courses.items()):
         if (c.get('profile') or {}).get('hidden') or not c.get('code'):
             continue
         num = cid.split('-', 1)[-1]
         code = str(c['code']).split('_')[0]
         try:
+            gs = groups(code, year, period)
+            if gs and gs != c.get('classGroups'):
+                course_changes[cid] = gs
+                summary.append(f'~ {c["short"]}: {len(gs)} group sessions from the Shnaton')
             found = exams(code, year, period)
         except Exception as e:
             failed.append(f'{c["short"]} ({e})')
@@ -226,6 +256,9 @@ def main():
     if not a.dry_run:
         out = [{'user_id': uid, 'col': 'item', 'id': i, 'data': it} for i, it in changed.items()]
         out += [{'user_id': uid, 'col': 'update', 'id': u['id'], 'data': u} for u in updates.values()]
+        if course_changes:  # read each course again just before writing, so edits made meanwhile are kept
+            fresh_c = {r['id']: r['data'] for r in req('GET', f'{base}?user_id=eq.{uid}&col=eq.course&select=id,data', cfg['service_key'])}
+            out += [{'user_id': uid, 'col': 'course', 'id': cid, 'data': dict(fresh_c[cid], classGroups=gs)} for cid, gs in course_changes.items() if cid in fresh_c]
         if not failed:  # if HUJI didn't answer, try again on the next hourly run
             fresh = next((r['data'] for r in req('GET', f'{base}?user_id=eq.{uid}&col=eq.settings&id=eq.prefs&select=data', cfg['service_key'])), {}) or {}
             out.append({'user_id': uid, 'col': 'settings', 'id': 'prefs', 'data': dict(fresh, lastShnatonSync=NOW)})
