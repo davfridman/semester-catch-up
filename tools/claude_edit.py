@@ -11,6 +11,9 @@ lands in the app's "What's new" feed with the reason and an Undo.
                                                              announcements it sums up (the app links back to them)
   claude_edit.py reviewed A_ID [A_ID ...]                    announcements you read that need no insight
   claude_edit.py brief YYYY-MM-DD "text"                     the evening notification's summary of that day
+  claude_edit.py reply MSG_ID "text"                         answer the student's chat message in the app
+  claude_edit.py tips off|on KIND                            turn one of the app's own tips off/on
+                                                             (exam, behind, week, opens, attend)
 
 COURSE and ITEM are ids as printed by `summary` (e.g. m-6441, m-169162).
 """
@@ -48,6 +51,25 @@ class Store:
 
 def summary(s):
     courses, items = s.get('course'), s.get('item')
+    prefs = (s.get('settings', 'prefs').get('prefs') or {})
+    notes = s.get('note')
+    chat = sorted((n for n in notes.values() if n.get('kind') == 'chat'), key=lambda n: n.get('at', ''))
+    print('CHAT (the student writes to you in the app; answer every message marked NEEDS ANSWER with `reply`)')
+    for m in chat[-12:]:
+        flag = '' if m.get('from') == 'claude' or m.get('answered') else '  NEEDS ANSWER'
+        print(f"  {m['id']} {m.get('at', '')[:16]} {m.get('from')}: {m.get('text', '')}{flag}")
+    if not chat:
+        print('  none')
+    print('WHAT THE STUDENT WANTS FROM YOU (their own words, from Settings)')
+    print('  ' + (prefs.get('claudeGuidance') or 'nothing written yet'))
+    fb = sorted((i for i in s.get('insight').values() if isinstance(i.get('feedback'), dict)), key=lambda i: i['feedback'].get('at', ''))[-12:]
+    print("FEEDBACK ON YOUR INSIGHTS (learn from it: write fewer of what they didn't find useful)")
+    for i in fb:
+        f = i['feedback']
+        print(f"  {'useful' if f.get('useful') else 'NOT useful'}{' (' + f['reason'] + ')' if f.get('reason') else ''}: {i.get('text', '')}")
+    if not fb:
+        print('  none yet')
+    print(f"  App tips the student turned off: {', '.join(prefs.get('mutedTips') or []) or 'none'}")
     today = dt.date.today().isoformat()
     soon = (dt.date.today() + dt.timedelta(days=21)).isoformat()
     sessions = {'Lecture', 'Tutorial', 'Online unit'}
@@ -104,7 +126,7 @@ def summary(s):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight', 'reviewed', 'brief'])
+    ap.add_argument('cmd', choices=['summary', 'rule', 'profile', 'importance', 'insight', 'reviewed', 'brief', 'reply', 'tips'])
     ap.add_argument('args', nargs='*')
     ap.add_argument('--why', default='')
     ap.add_argument('--course', default='')
@@ -130,6 +152,25 @@ def main():
                 doc['course'] = updates[a.about[0]].get('course', '')
         s.put('insight', [doc])
         return print('Insight added.')
+
+    if a.cmd == 'reply':
+        mid, text = a.args[0], ' '.join(a.args[1:])
+        notes = s.get('note')
+        assert mid in notes, f'no chat message {mid}'
+        assert text, 'write the reply'
+        s.put('note', [{'id': f'r-{STAMP}', 'kind': 'chat', 'from': 'claude', 'text': text, 'at': NOW, 'replyTo': mid},
+                       dict(notes[mid], answered=True)])
+        return print('Reply sent.')
+
+    if a.cmd == 'tips':
+        state, kind = a.args[0], a.args[1]
+        assert state in ('on', 'off') and kind in ('exam', 'behind', 'week', 'opens', 'attend'), 'tips off|on exam|behind|week|opens|attend'
+        cur = s.get('settings', 'prefs').get('prefs') or {'id': 'prefs'}
+        muted = set(cur.get('mutedTips') or [])
+        muted = muted - {kind} if state == 'on' else muted | {kind}
+        s.put('settings', [dict(cur, id='prefs', mutedTips=sorted(muted))])
+        s.log(f"Turned {state} the app's {kind} tips, as you asked.", [])
+        return print(f'{kind} tips {state}.')
 
     if a.cmd == 'brief':
         day, text = a.args[0], ' '.join(a.args[1:])
