@@ -1,6 +1,7 @@
 -- Run once in the Supabase SQL editor (Project → SQL Editor → New query → paste → Run).
 -- Keeps the previous version of a document every time it changes, so any single change can be undone
 -- and it's clear who made it: the iPhone app, the web app, or the server jobs (sync, Claude, tools).
+-- It also stamps every change with a fresh updated_at, which the apps' merge-on-save relies on.
 -- davfridman/semester-project#22
 
 create table if not exists public.docs_history (
@@ -39,6 +40,16 @@ end $$;
 drop trigger if exists docs_keep_history on public.docs;
 create trigger docs_keep_history after update or delete on public.docs
   for each row execute function public.docs_keep_history();
+
+-- Every change gets a fresh updated_at, whoever makes it. The apps save only when the row still has the
+-- updated_at they last saw (else they re-read and merge), so this stamp is what keeps writers from overwriting each other.
+create or replace function public.docs_touch() returns trigger language plpgsql as $$
+begin
+  new.updated_at := clock_timestamp();
+  return new;
+end $$;
+drop trigger if exists docs_touch on public.docs;
+create trigger docs_touch before update on public.docs for each row execute function public.docs_touch();
 
 -- History grows slowly (only real changes are kept). To trim it later, e.g. to the last 180 days:
 --   delete from public.docs_history where changed_at < now() - interval '180 days';
