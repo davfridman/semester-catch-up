@@ -1,8 +1,8 @@
-// Offline support: keep the app shell cached so it opens without a connection.
+// Offline support (everything is served from this site; no CDN or font service): keep the app shell cached so it opens without a connection.
 // Supabase requests always go to the network; the app keeps its own copy of your data.
-const VERSION = 'semester-v10';
+const VERSION = 'semester-v11';
 const SHELL = ['./', './index.html', './app.js', './legacy.html', './config.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon.png',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'];
+  './vendor/supabase.js', './vendor/figtree-latin.woff2'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => null)))).then(() => self.skipWaiting()));
 });
