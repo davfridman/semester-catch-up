@@ -1,0 +1,24 @@
+name: Contract checks
+
+# The shared rule cases, merge-on-save and the schemas, on every push and pull request.
+# No data and no credentials are used. davfridman/semester-project#26
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sh contract/run_checks.sh
