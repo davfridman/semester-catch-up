@@ -138,10 +138,21 @@ const Rules = (() => {
   }
   /// Every card in order, slots opened up in place.
   const planIDs = m => m.entries.flatMap(e => isSlot(e) ? m.slots[e].items : [e]);
+  /// The plan with a card or slot moved: `{ top: i }` on the top level, `{ slot, at: i }` inside a slot. Indexes
+  /// count positions without the moved one and are kept within bounds; a slot, or an unknown slot as the target,
+  /// goes on the top level (Plan.moving in the iPhone app). Returns a new model.
+  function planMoving(m, id, place) {
+    const out = { entries: m.entries.filter(e => e !== id), slots: {} };
+    for (const [k, v] of Object.entries(m.slots)) out.slots[k] = { ...v, items: v.items.filter(x => x !== id) };
+    const clamp = (i, n) => Math.min(Math.max(0, i), n), into = place.slot != null && !isSlot(id) ? out.slots[place.slot] : null;
+    if (into) into.items.splice(clamp(place.at, into.items.length), 0, id);
+    else out.entries.splice(clamp(place.slot != null ? place.at : place.top, out.entries.length), 0, id);
+    return out;
+  }
 
   return {
     SESSION_TYPES, pad, iso, parse, addDays, daysBetween, MONTHS, DOW, hhmm, dm, dow,
     isSession, status, isHandled, inProgress, isGate, profile, state, isOpenish, importance, priorityScore,
-    courseFactors, rankScore, rankedTasks, catchUp, weeks, currentWeek, isSlot, planModel, planIDs,
+    courseFactors, rankScore, rankedTasks, catchUp, weeks, currentWeek, isSlot, planModel, planIDs, planMoving,
   };
 })();

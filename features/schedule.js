@@ -17,7 +17,7 @@ function scheduleScreen() {
   const byTime = (a, b) => (a.it.time || '99').localeCompare(b.it.time || '99');
   const wk = w.find(x => d >= x.ws && d <= x.we);
   return `<div class="head"><div><div class="sub">${d === today() ? 'Today · ' : ''}${wk ? `Week ${wk.n}` : ''}</div><h1 style="font-size:28px">${esc(dayLabel(d))}</h1></div>${d !== today() ? '<button class="pill" data-day="today">Today</button>' : ''}</div>
-  <div class="day-strip" id="strip">${days.map(x => { const es = ev(x), due = es.some(y => y.kind === 'due'); return `<button class="day ${x === d ? 'on' : ''} ${x === today() ? 'today' : ''}" data-day="${x}" id="d-${x}">${DOW[parse(x).getDay()]}<b>${parse(x).getDate()}</b>${dayDots(es)}</button>`; }).join('')}</div>
+  <div class="day-strip" id="strip">${days.map(x => { const es = ev(x), due = es.some(y => y.kind === 'due'); const exam = es.some(y => y.kind === 'due' && isExam(y.it)); return `<button class="day ${x === d ? 'on' : ''} ${x === today() ? 'today' : ''} ${exam ? 'exam' : ''}" data-day="${x}" id="d-${x}"${exam ? ` aria-label="${DOW[parse(x).getDay()]} ${parse(x).getDate()}, exam"` : ''}>${DOW[parse(x).getDay()]}<b>${parse(x).getDate()}</b>${dayDots(es)}</button>`; }).join('')}</div>
   ${tasks.length ? `<div class="sec">Tasks</div>${cardsOr(tasks.sort(byTime).map(x => x.it), '', { trailing: 'time' })}` : ''}
   ${lect.length ? `<div class="sec">Lectures</div>${cardsOr(lect.sort(byTime).map(x => x.it), '', { trailing: 'time' })}` : ''}
   ${!e.length ? '<div class="empty" style="text-align:center;padding:40px 0">Nothing on this day.</div>' : ''}`;

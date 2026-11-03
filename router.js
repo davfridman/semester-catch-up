@@ -44,6 +44,15 @@ function back() {
 dataEvents.changed = () => { applyTheme(); render(); };
 dataEvents.message = msg => toast(msg);
 
+// ---------- Dragging in the plan (features/plan.js) ----------
+document.addEventListener('pointerdown', planPointerDown);
+document.addEventListener('pointermove', planPointerMove);
+document.addEventListener('pointerup', planPointerUp);
+document.addEventListener('pointercancel', planPointerUp);
+document.addEventListener('touchmove', e => { if (planCarrying()) e.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', e => { if (planHolding()) e.preventDefault(); });
+document.addEventListener('click', e => { if (planSwallowsClick()) { e.stopPropagation(); e.preventDefault(); } }, true);
+
 // ---------- Taps ----------
 document.addEventListener('click', e => {
   const t = e.target.closest('button, [data-open], [data-card], [data-scrim], a'); if (!t) return;

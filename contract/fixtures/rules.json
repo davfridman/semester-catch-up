@@ -104,6 +104,29 @@
        "ids": ["i3"]},
       {"name": "nothing stored",
        "entries": [], "slots": {}, "ids": []}
+    ],
+    "moves": [
+      {"name": "a card into a slot, between its cards", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "i1", "to": {"slot": "slot:a", "at": 1},
+       "entries": ["slot:a", "i4"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i1", "i3"], "collapsed": false}}},
+      {"name": "a card out of a slot, to the top", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "i3", "to": {"top": 0},
+       "entries": ["i3", "i1", "slot:a", "i4"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2"], "collapsed": false}}},
+      {"name": "a card within its slot", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "i3", "to": {"slot": "slot:a", "at": 0},
+       "entries": ["i1", "slot:a", "i4"], "slots": {"slot:a": {"name": "Sunday", "items": ["i3", "i2"], "collapsed": false}}},
+      {"name": "a slot moves as one; an index past the end is the end", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "slot:a", "to": {"top": 9},
+       "entries": ["i1", "i4", "slot:a"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}}},
+      {"name": "a slot can't go into a slot: top level at that index", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "slot:a", "to": {"slot": "slot:a", "at": 0},
+       "entries": ["slot:a", "i1", "i4"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}}},
+      {"name": "an unknown slot: top level at that index", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "i4", "to": {"slot": "slot:zz", "at": 1},
+       "entries": ["i1", "i4", "slot:a"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}}},
+      {"name": "a negative index is the start", "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}},
+       "move": "i4", "to": {"top": -3},
+       "entries": ["i4", "i1", "slot:a"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": false}}}
     ]
   }
 }

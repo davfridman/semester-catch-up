@@ -36,6 +36,7 @@ Details:
 - **Stamps.** Supabase returns `…+00:00`; a `+` in a query string reads as a space, so stamps are kept as `…Z`. A stamp that isn't UTC is written without the check.
 - **The sync switch.** `prefs.syncMode == "whole"` (set with `tools/sync_mode.py whole`) saves whole documents the old way, last writer wins.
 - **Change history and undo.** Every change keeps the version before it in `docs_history` (`supabase/migrations/004_history.sql`), with who made it: the iPhone app, the web app, or a job (the Python tools send `X-Writer: tool:<name>`). `tools/history.py` lists changes, `show HID` shows one field by field, and `undo HID` puts back only the fields that change touched, on the same stamp check the apps use; it refuses when a later change touched those fields (`--force` overrides).
+- **Dragging in the plan.** `features/plan.js` has the iPhone app's long-press drag: a 0.3 s hold (or a mouse moving) lifts a card or slot, the plan as it would be if dropped is a draft (`Rules.planMoving`, the same cases as `Plan.moving` in `contract/fixtures/rules.json` → `plan.moves`), and each redraw slides everything from its old place on the same spring as SwiftUI's `.snappy`. The router passes it the pointer events; nothing is saved until the drop.
 - **Never delete rows.** The apps hide items instead, and nobody has delete rights. Nothing in `sync.js` deletes.
 - **Demo mode** (`?demo=file.json` on localhost) has no engine, so it never writes.
 - **Another account** signing in starts from empty data, so nothing of the previous account can be saved into it.

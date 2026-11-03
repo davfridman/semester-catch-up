@@ -37,6 +37,7 @@ function fromRules(ctx) {
     ranked: (items, courses) => R.rankedTasks(items, courses, NOW), score: (it, courses) => R.rankScore(it, R.courseFactors(courses), NOW),
     catchUp: items => R.catchUp(items, NOW), weeks: prefs => R.weeks(prefs), dm: (s, style) => R.dm(s, style),
     plan: (prefs, ids) => { const p = R.planModel(prefs, x => ids.includes(x)); return { ...p, ids: R.planIDs(p) }; },
+    move: (prefs, ids, id, to) => R.planMoving(R.planModel(prefs, x => ids.includes(x)), id, to),
   };
 }
 function fromApp(ctx) {
@@ -52,6 +53,7 @@ function fromApp(ctx) {
     weeks: prefs => { setS({ prefs }); return run('weeks()', {}); },
     dm: (s, style) => { setS({ prefs: { dateStyle: style } }); return run('dm(__d)', { __d: s }); },
     plan: (prefs, ids) => { setS({ prefs, items: ids.map(id => ({ id })) }); return run('({ ...planModel(), ids: planIDs() })', {}); },
+    move: (prefs, ids, id, to) => { setS({ prefs, items: ids.map(id => ({ id })) }); return run('Rules.planMoving(planModel(), __id, __to)', { __id: id, __to: to }); },
   };
 }
 
@@ -94,6 +96,10 @@ function check(name, rules) {
   for (const c of F.plan.cases) {
     const p = rules.plan({ plan: c.plan, planSlots: c.planSlots }, F.plan.items);
     for (const k of ['entries', 'slots', 'ids']) expect('plan', canon(p[k]) === canon(c[k]), `${c.name}: ${k} ${canon(p[k])}, expected ${canon(c[k])}`);
+  }
+  for (const c of F.plan.moves) {
+    const p = rules.move({ plan: c.plan, planSlots: c.planSlots }, F.plan.items, c.move, c.to);
+    for (const k of ['entries', 'slots']) expect('planMoves', canon(p[k]) === canon(c[k]), `${c.name}: ${k} ${canon(p[k])}, expected ${canon(c[k])}`);
   }
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   console.log(`${name}: ${total - fails.length}/${total} checks pass (${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(', ')})`);
