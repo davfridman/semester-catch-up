@@ -1,7 +1,7 @@
 // Semester Catch-Up's rules: task status, importance, ranking, catch-up, semester weeks, date styles and the plan's
 // stored format. The same rules as the iPhone app (Core/Rules), checked against contract/fixtures/rules.json by
 // contract/check_web.mjs. Pure functions only: no page, no data loading, and the clock only as a default `now`.
-// index.html loads this before app.js; app.js binds these to its state (S.prefs, S.courses, the current time).
+// index.html loads this before the page's other scripts; models.js binds these to its state (S.prefs, S.courses, the current time).
 'use strict';
 
 const Rules = (() => {

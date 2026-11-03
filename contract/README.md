@@ -3,13 +3,14 @@
 Three programs read and write the same Supabase table, `docs` (`user_id`, `col`, `id`, `data`, `updated_at`):
 
 - the iPhone app (`semester-ios`);
-- the web app (`index.html`, `rules.js`, `app.js`);
+- the web app (`index.html` and its scripts; see `ARCHITECTURE.md`);
 - the Python tools in `tools/`, run by the hourly GitHub Action, the nightly Claude routine and on the Mac.
 
 This folder holds what they agree on, so the rules and the data stop drifting apart.
 
 | File | What it is | Who reads it |
 | --- | --- | --- |
+| `check_sync.mjs` | Merge-on-save (`sync.js`): the iPhone app's `FieldPatchTests` and `SyncEngineTests` cases against an in-memory store, and the web app's data layer on top. `live_sync_check.mjs` runs the store against the real table, on `note/sync-check` only. | `run_checks.sh`; the live check by hand with `SC_LIVE=1` |
 | `fixtures/rules.json` | Rule cases at a fixed `now` (noon, 2 Nov 2026): task status and its text, importance, priority, course ranking, catch-up, semester weeks, date styles, and reading the plan (`prefs.plan` and `prefs.planSlots`, current and first-version formats). | `check_web.mjs`, `tools/contract_rules.py`, and the iPhone app's `RulesTests` (it uses the same keys) |
 | `schema/<collection>.json` | One JSON Schema (draft 2020-12) per collection: `course`, `item`, `settings`, `question`, `update`, `insight`, `note`. Field types, which fields are required, and `x-writers` on each field. | `tools/contract_check.py` |
 | `fixtures/docs.json`, `fixtures/docs-bad.json` | Synthetic documents: one set that must pass the schemas, one that must fail in the listed places. | `contract_check.py --self-test` |
@@ -44,7 +45,9 @@ A new rule case goes in `fixtures/rules.json`. Run it against all three: `node c
 
 ```sh
 sh contract/run_checks.sh                           # everything that needs no data or credentials (CI-ready)
-node contract/check_web.mjs                         # rule cases against rules.js, and through app.js's bindings
+node contract/check_web.mjs                         # rule cases against rules.js, and through the page's bindings (models.js)
+node contract/check_sync.mjs                        # merge-on-save against an in-memory store
+SC_LIVE=1 node contract/live_sync_check.mjs         # merge-on-save against the live table, on note/sync-check only (service key)
 python3 tools/contract_rules.py                     # rule cases the Python tools implement (plan reading, lectures behind)
 python3 tools/contract_check.py --self-test         # the schemas and the synthetic fixtures
 python3 tools/contract_check.py BACKUP/docs.json    # a dump: the backup's docs.json, or backup_dump.py's output
