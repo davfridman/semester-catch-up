@@ -13,6 +13,7 @@ import argparse, datetime as dt, hashlib, json, os, re, subprocess, sys, time, u
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from supabase_load import req, user_id, load_cfg, SSL  # noqa: E402
+from moodle_api import SITE  # noqa: E402
 
 ICS_URL_FILE = os.path.expanduser('~/.config/semester-catchup/moodle-ics-url')
 NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
@@ -301,26 +302,35 @@ def main():
                                  'seen': False, 'source': 'moodle'}
                 summary.append(f'+ {courses[cid]["short"]}: announcement "{subject}"')
 
-    # calendar feed: deadlines the browser data didn't cover
-    ics, err = None, None
-    feed = os.environ.get('MOODLE_ICS_URL') or open(ICS_URL_FILE).read().strip()
-    for attempt in range(4):  # HUJI's server sometimes resets connections; retry, then fall back to curl
-        try:
-            if attempt < 3:
-                ics = urllib.request.urlopen(urllib.request.Request(feed, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) SemesterCatchUp/1.0'}), timeout=30, context=SSL).read().decode('utf-8')
-            else:
-                ics = subprocess.run(['/usr/bin/curl', '-fsS', '--retry', '3', '--max-time', '40', feed], capture_output=True, text=True, check=True).stdout
-            if 'BEGIN:VCALENDAR' in ics:
-                break
-            ics = None
-        except Exception as e:
-            err = e; time.sleep(2 + attempt * 3)
-    if ics is None:
-        summary.append(f'! Calendar feed failed: {err}')
-    if ics:
+    # The Moodle calendar: deadlines and opening dates the activities didn't cover. Through the app key when Moodle
+    # is connected (davfridman/semester-project#41); otherwise from the private calendar link, if there is one.
+    events = None
+    if moodle and moodle.get('calendar') is not None:
+        host = SITE.split('://', 1)[1]  # the calendar link's event UIDs are "<event id>@<site>"
+        events = [{'cid': by_moodle.get(c), 'SUMMARY': name, 'UID': f'{eid}@{host}', '_dt': dt.datetime.fromtimestamp(ts).astimezone()}
+                  for eid, name, c, ts in moodle['calendar'] if ts]
+    else:
+        feed = os.environ.get('MOODLE_ICS_URL') or (open(ICS_URL_FILE).read().strip() if os.path.exists(ICS_URL_FILE) else '')
+        ics, err = None, 'no Moodle connection and no calendar link'
+        for attempt in range(4 if feed else 0):  # HUJI's server sometimes resets connections; retry, then fall back to curl
+            try:
+                if attempt < 3:
+                    ics = urllib.request.urlopen(urllib.request.Request(feed, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) SemesterCatchUp/1.0'}), timeout=30, context=SSL).read().decode('utf-8')
+                else:
+                    ics = subprocess.run(['/usr/bin/curl', '-fsS', '--retry', '3', '--max-time', '40', feed], capture_output=True, text=True, check=True).stdout
+                if 'BEGIN:VCALENDAR' in ics:
+                    break
+                ics = None
+            except Exception as e:
+                err = e; time.sleep(2 + attempt * 3)
+        if ics is None:
+            summary.append(f'! Calendar feed failed: {err}')
+        else:
+            events = [dict(e, cid=by_code.get(re.split(r'[-_]', e.get('CATEGORIES', ''))[0].strip())) for e in parse_ics(ics)]
+    if events:
         groups = {}
-        for e in parse_ics(ics):
-            cid = by_code.get(re.split(r'[-_]', e.get('CATEGORIES', ''))[0].strip())
+        for e in events:
+            cid = e['cid']
             if not cid or re.search(r'נוכחות|attendance', e.get('SUMMARY', ''), re.I):
                 continue
             base_t, kind = ics_base(e.get('SUMMARY', ''))
@@ -363,7 +373,7 @@ def main():
         prefs = next((r['data'] for r in req('GET', f'{base}?user_id=eq.{uid}&col=eq.settings&id=eq.prefs&select=data', cfg['service_key'])), {}) or {}
         # When each source last delivered data, so the app can show how fresh the information is.
         stamps = {'lastSync': NOW}
-        if ics:
+        if events is not None:
             stamps['lastCalendarSync'] = NOW
         if moodle and moodle.get('fetchedAt'):
             stamps['lastMoodleSync'] = moodle['fetchedAt']

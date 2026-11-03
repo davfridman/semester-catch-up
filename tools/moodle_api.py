@@ -4,8 +4,9 @@ in the same shape the browser snippet produces, for moodle_sync.py --moodle:
 
   moodle_api.py > snapshot.json && moodle_sync.py --moodle snapshot.json
 
-Covers assignments and quizzes (dates and whether you submitted), and course announcements.
-Recordings (Panopto) aren't part of Moodle's app API, so "panopto" stays empty.
+Covers assignments and quizzes (dates and whether you submitted), course announcements, and the Moodle calendar
+(deadlines and opening dates, so no private calendar link is needed). Recording links aren't part of Moodle's app
+API, so "panopto" stays empty: the iPhone app's "Get recordings" reads them from the course pages.
 Only reads; it never calls anything that submits or changes Moodle.
 
 The token is read from the app's Supabase data (settings/moodle), or MOODLE_TOKEN in the environment.
@@ -29,7 +30,7 @@ SITE = 'https://moodle.huji.ac.il/2026-27'
 ALLOWED = {
     'core_webservice_get_site_info', 'core_enrol_get_users_courses', 'mod_assign_get_assignments',
     'mod_assign_get_submission_status', 'mod_quiz_get_quizzes_by_courses', 'mod_quiz_get_user_attempts',
-    'mod_forum_get_forums_by_courses', 'mod_forum_get_forum_discussions',
+    'mod_forum_get_forums_by_courses', 'mod_forum_get_forum_discussions', 'core_calendar_get_calendar_events',
 }
 
 
@@ -138,6 +139,16 @@ def snapshot(token):
             out['status'][str(q['coursemodule'])] = 'submitted' if att else 'none'
         except RuntimeError as e:
             out['errors'].append(str(e))
+
+    # The Moodle calendar (deadlines and opening dates): the same events the private calendar link has, from a
+    # week back to the end of the year. [event id, title, course id, start (Unix time)].
+    try:
+        now = int(time.time())
+        evs = ws(token, 'core_calendar_get_calendar_events', events={'courseids': ids},
+                 options={'userevents': 1, 'siteevents': 1, 'timestart': now - 7 * 86400, 'timeend': now + 300 * 86400}).get('events', [])
+        out['calendar'] = [[str(e['id']), html.unescape(e.get('name') or ''), str(e.get('courseid') or ''), e.get('timestart') or 0] for e in evs]
+    except RuntimeError as e:
+        out['errors'].append(str(e))
 
     # Announcements: the news forum of each course, latest few posts.
     for f in ws(token, 'mod_forum_get_forums_by_courses', courseids=ids):
