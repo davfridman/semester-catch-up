@@ -26,6 +26,8 @@ def load_cfg():
 
 def req(method, url, key, body=None, extra=None):
     h = {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'} if key else {'Content-Type': 'application/json'}
+    # Names the job in the change history (docs_history.writer), e.g. "tool:moodle_sync".
+    h['X-Writer'] = 'tool:' + os.path.splitext(os.path.basename(sys.argv[0]))[0]
     h.update(extra or {})
     r = urllib.request.Request(url, method=method, headers=h, data=json.dumps(body).encode() if body is not None else None)
     with urllib.request.urlopen(r, timeout=60, context=SSL) as resp:
