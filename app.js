@@ -74,46 +74,116 @@ const clock = t => { t = Math.max(0, Math.round(t)); const h = Math.floor(t / 36
 // ---------- Data ----------
 // Local testing only: ?demo=file.json on localhost shows an exported copy without signing in; nothing is saved.
 const DEMO = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).get('demo');
+// Saving merges (sync.js): only the fields you changed go on top of the server's current copy, written only if
+// nobody wrote in between. The engine is made at sign-in; demo mode has none, so it never writes.
+let engine = null, pushing = null, pushAgain = false, pushTimer = null, retryTimer = null, renderAfterSave = false;
+const lists = () => ({ course: S.courses, item: S.items, question: S.questions, update: S.updates, insight: S.insights, note: S.chat });
+// How the app holds a document: with its row id when data.id is missing (settings stay as they are).
+const shape = (k, d) => { const { col, id } = Sync.split(k), o = d && typeof d === 'object' && !Array.isArray(d) ? d : {}; return col === 'settings' || o.id ? o : { ...o, id }; };
+function startSync(user) {
+  clearTimeout(pushTimer); clearTimeout(retryTimer); renderAfterSave = false;
+  // A new account starts empty, so nothing of the previous one can look like an edit and be saved into it.
+  Object.assign(S, { courses: [], items: [], prefs: {}, questions: [], updates: [], insights: [], chat: [], loaded: false });
+  engine = user && !DEMO ? new Sync.SyncEngine(new Sync.SupabaseStore(sb, user.id), { shape }) : null;
+}
+/// Every document the web app keeps in step with the server (non-chat notes aren't kept, so they're never written).
+function docMap() {
+  const m = new Map();
+  for (const [col, list] of Object.entries(lists())) for (const d of list) m.set(Sync.key(col, d.id), d);
+  m.set(Sync.PREFS, S.prefs);
+  return m;
+}
+const pending = () => !!engine && engine.changed(docMap()).length > 0;
+/// Puts one document back into the app, e.g. after a save kept someone else's change in it.
+function setDoc(k, o) {
+  const { col, id } = Sync.split(k);
+  if (col === 'settings') { if (id === 'prefs') S.prefs = o; return; }
+  if (col === 'note' && o.kind !== 'chat') return;
+  const list = lists()[col]; if (!list) return;
+  const i = list.findIndex(x => x.id === id); if (i >= 0) list[i] = o; else list.push(o);
+}
 async function load() {
   if (DEMO) {
     const o = await (await fetch(DEMO)).json();
     Object.assign(S, { courses: o.courses || [], items: o.items || [], questions: o.questions || [], updates: o.updates || [], insights: o.insights || [], chat: o.chat || [], prefs: o.prefs || {}, loaded: true });
     applyTheme(); return render();
   }
-  const { data, error } = await sb.from('docs').select('col,id,data').eq('user_id', S.user.id).range(0, 9999);
-  if (error) { toast(`Couldn’t load: ${error.message}`); return; }
+  if (!engine) return;
+  const e = engine;
+  // Unsaved changes stay on screen: save them first, and never let a download overwrite them.
+  if (pushing) await pushing;
+  if (pending() && !(await push())) return;
+  let docs;
+  try { docs = await e.fetchAll(); } catch (err) { toast(`Couldn’t load: ${err.message}`); return; }
+  if (e !== engine || pending()) return;   // signed out, or changed while loading: the next load picks it up after the save
   const by = { course: [], item: [], question: [], update: [], insight: [], note: [] }; let prefs = {};
-  for (const r of data) {
-    if (r.col === 'settings' && r.id === 'prefs') prefs = r.data || {};
-    else if (by[r.col]) by[r.col].push({ ...r.data, id: r.data?.id || r.id });
+  for (const d of docs) {
+    const { col, id } = Sync.split(d.key);
+    if (col === 'settings' && id === 'prefs') prefs = shape(d.key, d.data);
+    else if (by[col]) by[col].push(shape(d.key, d.data));
   }
+  // The app's copy and the base are separate copies: the app changes its documents in place.
+  const own = o => Sync.clone(o);
   const chat = by.note.filter(n => n.kind === 'chat').sort((a, b) => (a.at || '').localeCompare(b.at || ''));
-  Object.assign(S, { courses: by.course, items: by.item, questions: by.question, updates: by.update, insights: by.insight, chat, prefs, loaded: true });
+  Object.assign(S, { courses: by.course.map(own), items: by.item.map(own), questions: by.question.map(own), updates: by.update.map(own), insights: by.insight.map(own), chat: chat.map(own), prefs: own(prefs), loaded: true });
+  e.adopt(docs);
   applyTheme();
   render();
 }
 
-/// Read the newest copy of one document, change it, write it back.
-async function patch(col, id, change) {
-  if (DEMO) return render();
-  const { data: rows, error } = await sb.from('docs').select('data').eq('user_id', S.user.id).eq('col', col).eq('id', id).limit(1);
-  if (error) { toast(`Not saved: ${error.message}`); return; }
-  const cur = rows?.[0]?.data || { id };
-  const next = change(structuredClone(cur)) || cur;
-  const { error: e2 } = await sb.from('docs').upsert({ user_id: S.user.id, col, id, data: next }, { onConflict: 'user_id,col,id' });
-  if (e2) { toast(`Not saved: ${e2.message}`); return; }
-  const list = { course: S.courses, item: S.items, question: S.questions, update: S.updates, insight: S.insights, note: S.chat }[col];
-  if (col === 'settings' && id === 'prefs') S.prefs = next;
-  else if (list) { const i = list.findIndex(x => x.id === id); if (i >= 0) list[i] = next; else list.push(next); }
-  render();
+/// Saves every changed document (sync.js). Returns false if it couldn't, and tries again in 10 seconds.
+async function push() {
+  if (DEMO || !engine) { if (renderAfterSave) { renderAfterSave = false; render(); } return true; }
+  if (pushing) { pushAgain = true; return pushing; }
+  const e = engine;
+  pushing = (async () => {
+    try {
+      // The sync switch (tools/sync_mode.py): prefs.syncMode "whole" goes back to saving whole documents.
+      e.mode = S.prefs.syncMode === 'whole' ? 'whole' : 'merge';
+      const local = docMap(), sent = new Map(e.changed(local).map(k => [k, Sync.clone(local.get(k))]));
+      // Rows are only added or updated; nothing is ever deleted (the apps hide items instead).
+      const adjusted = sent.size ? await e.push(sent) : new Map();
+      if (e !== engine) return true;
+      // A save that kept another writer's changes: show the saved version, with any edit you made meanwhile on top.
+      if (adjusted.size) {
+        const now = docMap();
+        for (const [k, saved] of adjusted) {
+          const mine = now.get(k) ?? sent.get(k);
+          setDoc(k, Sync.same(mine, sent.get(k)) ? saved : Sync.applyPatch(saved, Sync.fieldPatch(sent.get(k), mine)));
+        }
+      }
+      if (adjusted.size || renderAfterSave) { renderAfterSave = false; render(); }
+      return true;
+    } catch (err) {
+      toast(`Couldn’t save yet: ${err.message}. Trying again…`);
+      clearTimeout(retryTimer); retryTimer = setTimeout(push, 10000);
+      return false;
+    }
+  })();
+  const ok = await pushing;
+  pushing = null;
+  if (pushAgain) { pushAgain = false; schedulePush(); }
+  return ok;
 }
+/// Saves shortly after a change, so a burst of changes (Mark all seen) goes out together.
+function schedulePush(ms = 250) { clearTimeout(pushTimer); pushTimer = setTimeout(push, ms); }
+
+/// Changes one document here and saves it. `change` edits the document in place, or returns a new one.
+/// Course and item documents are only changed when the app has them; nothing new is made up for them.
+function edit(col, id, change) {
+  if (col === 'settings') { if (id !== 'prefs') return; const next = change(S.prefs); if (next && next !== S.prefs) S.prefs = next; }
+  else {
+    const list = lists()[col]; if (!list) return;
+    let i = list.findIndex(d => d.id === id);
+    if (i < 0) { if (col === 'item' || col === 'course') return; list.push({ id }); i = list.length - 1; }
+    const next = change(list[i]); if (next && next !== list[i]) list[i] = next;
+  }
+  schedulePush();
+}
+/// Change and save; the screen redraws once the save is done (like before, so a tap that ended a text edit still lands).
+function patch(col, id, change) { edit(col, id, change); renderAfterSave = true; }
 // Show the change right away, then save it.
-function optimistic(col, id, change) {
-  const list = { item: S.items, update: S.updates, insight: S.insights, question: S.questions }[col];
-  if (col === 'settings') change(S.prefs); else { const x = list?.find(d => d.id === id); if (x) change(x); }
-  render();
-  return patch(col, id, change);
-}
+function optimistic(col, id, change) { edit(col, id, change); render(); }
 const setPref = (k, v) => optimistic('settings', 'prefs', p => { if (v == null) delete p[k]; else p[k] = v; return p; });
 
 function setStatus(id, value, announce = true) {
@@ -420,7 +490,7 @@ async function sendChat() {
   const at = new Date().toISOString(), id = 'm-' + at.replace(/\D/g, '').slice(0, 14);
   const doc = { id, kind: 'chat', from: 'you', text, at, ...(d.items?.length ? { items: d.items } : {}) };
   S.chatDraft = null; S.chat.push(doc); render();
-  if (!DEMO) await patch('note', id, () => doc);
+  patch('note', id, () => doc);
 }
 function settingsScreen() {
   const fresh = (label, stamp) => { const d = stamp ? new Date(stamp) : null, h = d ? (Date.now() - d) / 36e5 : 1e9; const c = h <= 7 ? 'var(--green)' : h <= 72 ? 'var(--orange)' : 'var(--red)';
@@ -628,12 +698,15 @@ document.addEventListener('change', e => {
 });
 
 // Keep in step with the iPhone app and the syncs: reload when the page comes back, and every 2 minutes.
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.user && !S.sheet) load(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.user && !S.sheet) load();
+  if (document.visibilityState === 'hidden' && pending()) push();   // leaving the page: save what's waiting now
+});
 setInterval(() => { if (document.visibilityState === 'visible' && S.user && !S.sheet) load(); }, 120000);
 
 if (DEMO) { S.user = { id: 'demo', email: 'demo' }; load(); } else sb.auth.onAuthStateChange((_e, session) => {
   const was = S.user?.id; S.user = session?.user || null;
-  if (!S.user) { S.loaded = false; return render(); }
-  if (was !== S.user.id) { S.loaded = false; render(); load(); }
+  if (!S.user) { startSync(null); S.loaded = false; return render(); }
+  if (was !== S.user.id) { startSync(S.user); S.loaded = false; render(); load(); }
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -19,7 +19,7 @@ const nothing = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimi
 function page(files) {
   const ctx = vm.createContext({
     window: { APP_CONFIG: {}, supabase: { createClient: () => nothing } }, document: nothing, navigator: {},
-    location: { hostname: 'contract-check', search: '' }, URLSearchParams, setInterval: () => 0, setTimeout: () => 0,
+    location: { hostname: 'contract-check', search: '' }, URLSearchParams, setInterval: () => 0, setTimeout: () => 0, clearTimeout: () => {},
     console, structuredClone,
   });
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
@@ -105,8 +105,10 @@ const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(x => x[1]);
 const inOrder = order.indexOf('rules.js') >= 0 && order.indexOf('rules.js') < order.indexOf('app.js');
 console.log(`index.html loads ${order.join(', ')}${inOrder ? '' : '  FAIL: rules.js must come before app.js'}`);
+// The app's own scripts, in the page's order (config.js and vendor/ are stubbed by page()).
+const own = order.filter(f => f !== 'config.js' && !f.startsWith('vendor/'));
 
 let failed = inOrder ? 0 : 1;
 failed += check('rules.js', fromRules(page(['rules.js'])));
-failed += check('app.js', fromApp(page(['rules.js', 'app.js'])));
+failed += check('app.js', fromApp(page(own)));
 process.exit(failed ? 1 : 0);
