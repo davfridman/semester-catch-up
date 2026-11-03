@@ -29,6 +29,44 @@ NOW = dt.datetime.now().astimezone().isoformat(timespec='seconds')
 STAMP = re.sub(r'\D', '', NOW[:19])
 
 
+SESSIONS = {'Lecture', 'Tutorial', 'Online unit'}
+HANDLED = {'done', 'skip', 'attended', 'reviewed'}
+
+
+def is_behind(it, today):
+    """A lecture or tutorial already held (on or before `today`) and not watched, attended, skimmed or skipped:
+    the apps' "to watch", counted as behind in their catch-up. Optional ones never count. Checked by contract_rules.py."""
+    return (it.get('type') in SESSIONS and bool(it.get('date')) and it['date'] <= today
+            and (it.get('status') or 'todo') not in HANDLED and not it.get('optional'))
+
+
+def plan_model(prefs, exists):
+    """prefs.plan and prefs.planSlots as (entries, slots), read the way the apps read them: entries is the top level in
+    order (item ids and "slot:<id>"), slots maps each slot to {name, items, collapsed}. Cards whose item no longer
+    exists are dropped, and so are slots with nothing stored. The first version stored a slot as just its name, with
+    its cards after it in prefs.plan; that reads into the same shape. Checked by contract_rules.py."""
+    stored = prefs.get('planSlots') or {}
+    entries, slots, legacy = [], {}, None
+    for e in prefs.get('plan') or []:
+        if isinstance(e, str) and e.startswith('slot:') and stored.get(e) is not None:
+            v = stored[e]
+            if isinstance(v, dict):
+                slots[e] = {'name': v.get('name') or '', 'items': [x for x in v.get('items') or [] if exists(x)], 'collapsed': bool(v.get('collapsed'))}
+                legacy = None
+            else:
+                slots[e] = {'name': str(v), 'items': [], 'collapsed': False}
+                legacy = e
+            entries.append(e)
+        elif exists(e):
+            (slots[legacy]['items'] if legacy else entries).append(e)
+    return entries, slots
+
+
+def plan_ids(entries, slots):
+    """Every card in order, slots opened up in place."""
+    return [x for e in entries for x in (slots[e]['items'] if e in slots else [e])]
+
+
 class Store:
     def __init__(self):
         self.cfg = load_cfg()
@@ -66,21 +104,17 @@ def summary(s):
     print('  ' + (prefs.get('claudeGuidance') or 'nothing written yet'))
     fb = sorted((i for i in s.get('insight').values() if isinstance(i.get('feedback'), dict)), key=lambda i: i['feedback'].get('at', ''))[-12:]
     # The student's plan of action, in order. A slot is a named group of cards ("Sunday morning") that moves as one.
-    stored = prefs.get('planSlots') or {}
+    entries, slots = plan_model(prefs, lambda x: x in items)
     print('PLAN (the order the student chose; "## name" is a slot, the indented lines under it are its cards)')
-    legacy, shown = None, 0
     line = lambda e, pad: print(f"{pad}{e} {courses.get(items[e]['c'], {}).get('short')} {items[e]['type']} | {items[e]['title']} | {items[e]['date']} | {items[e].get('status', 'todo')}")
-    for e in prefs.get('plan') or []:
-        if e.startswith('slot:') and e in stored:
-            v = stored[e]
-            print(f"  ## {v.get('name') if isinstance(v, dict) else v}")
-            legacy = None if isinstance(v, dict) else e  # the first version kept a slot's cards after it in the plan
-            for x in (v.get('items') or []) if isinstance(v, dict) else []:
-                if x in items:
-                    line(x, '      '); shown += 1
-        elif e in items:
-            line(e, '      ' if legacy else '    '); shown += 1
-    if not shown:
+    for e in entries:
+        if e in slots:
+            print(f"  ## {slots[e]['name']}")
+            for x in slots[e]['items']:
+                line(x, '      ')
+        else:
+            line(e, '    ')
+    if not plan_ids(entries, slots):
         print('  empty')
     print("FEEDBACK ON YOUR INSIGHTS (learn from it: write fewer of what they didn't find useful)")
     for i in fb:
@@ -91,21 +125,19 @@ def summary(s):
     print(f"  App tips the student turned off: {', '.join(prefs.get('mutedTips') or []) or 'none'}")
     today = dt.date.today().isoformat()
     soon = (dt.date.today() + dt.timedelta(days=21)).isoformat()
-    sessions = {'Lecture', 'Tutorial', 'Online unit'}
     print('COURSES')
     for c in sorted(courses.values(), key=lambda c: c.get('order', 99)):
-        behind = sum(1 for i in items.values() if i['c'] == c['id'] and i['type'] in sessions and i['date'] <= today
-                     and i.get('status') not in ('done', 'skip') and not i.get('hidden'))
+        behind = sum(1 for i in items.values() if i['c'] == c['id'] and is_behind(i, today) and not i.get('hidden'))
         print(f"  {c['id']} {c.get('short')} · {c.get('name')} · {behind} lectures behind · profile {json.dumps(c.get('profile', {}), ensure_ascii=False)}")
     print('TASKS, next 3 weeks and overdue (id course type title due weight status myImportance locked)')
     for i in sorted(items.values(), key=lambda i: i['date']):
-        if i['type'] in sessions or i.get('hidden') or i['date'] > soon or (i['date'] < today and i.get('status') in ('done', 'skip')):
+        if i['type'] in SESSIONS or i.get('hidden') or i['date'] > soon or (i['date'] < today and i.get('status') in ('done', 'skip')):
             continue
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} {i.get('time', '')}"
               f" | w={i.get('weight')} | {i.get('status', 'todo')} | imp={i.get('myImportance', 0)} | locked={i.get('locked', [])}")
     print('LECTURES AND TUTORIALS HELD, NOT WATCHED YET (id course type title date status)')
-    behind = [i for i in sorted(items.values(), key=lambda i: i['date']) if i['type'] in sessions and i['date'] <= today and not i.get('hidden')
-              and i.get('status') not in ('done', 'skip', 'attended', 'reviewed') and not (courses.get(i['c'], {}).get('profile') or {}).get('hidden')]
+    behind = [i for i in sorted(items.values(), key=lambda i: i['date']) if is_behind(i, today) and not i.get('hidden')
+              and not (courses.get(i['c'], {}).get('profile') or {}).get('hidden')]
     for i in behind[-40:]:
         print(f"  {i['id']} {courses.get(i['c'], {}).get('short')} {i['type']} | {i['title']} | {i['date']} | {i.get('status', 'todo')}")
     if not behind:
