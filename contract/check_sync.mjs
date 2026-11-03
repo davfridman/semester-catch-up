@@ -155,9 +155,139 @@ const cases = {
   },
 };
 
-for (const [name, run] of Object.entries(cases)) {
+// ---------- The web app's data layer on top (load, edit, push), with the page's scripts in index.html's order ----------
+// A page with no DOM: every document call does nothing. Timers never fire; the cases call push() and load() themselves.
+const nothing = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => '' : nothing), apply: () => nothing });
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(x => x[1]).filter(f => f !== 'config.js' && !f.startsWith('vendor/'));
+function app(server) {
+  const page = vm.createContext({
+    window: { APP_CONFIG: {}, supabase: { createClient: () => nothing } }, document: nothing, navigator: {},
+    location: { hostname: 'contract-check', search: '' }, URLSearchParams, setInterval: () => 0, setTimeout: () => 0, clearTimeout: () => {},
+    console, structuredClone,
+  });
+  for (const f of scripts) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), page, { filename: f });
+  const run = (code, vars = {}) => { Object.assign(page, vars); return vm.runInContext(code, page); };
+  const store = new (run('Sync').MemoryStore)(server);
+  const toasts = [];
+  run(`toast = m => __toasts.push(m); startSync({ id: 'u1', email: 'you@example.com' }); S.user = { id: 'u1', email: 'you@example.com' };
+       engine = new Sync.SyncEngine(__store, { shape });`, { __store: store, __toasts: toasts });
+  return { run, store, toasts };
+}
+const item1 = key('item', 'i1'), prefsKey = key('settings', 'prefs');
+const appCases = {
+  async 'the app loads the server’s documents and writes nothing'() {
+    const { run, store } = app({ [item1]: { id: 'i1', c: 'c1', title: 'Ex 1', date: '2026-11-10', status: 'todo' }, [course]: { id: 'c1', name: 'C' }, [prefsKey]: { dateStyle: 'd/M' }, [key('note', 'idea1')]: { id: 'idea1', kind: 'idea' } });
+    await run('load()');
+    expect('app load: items', run('S.items.map(i => i.id)'), ['i1']);
+    expect('app load: prefs', run('S.prefs'), { dateStyle: 'd/M' });
+    expect('app load: nothing pending', run('pending()'), false);
+    await run('push()');
+    expect('app load: no writes', store.writes, 0);
+  },
+  async 'marking done keeps the sync’s new date, and the app shows it'() {
+    const { run, store, toasts } = app({ [item1]: { id: 'i1', title: 'Ex 1', date: '2026-11-10', status: 'todo' } });
+    await run('load()');
+    store.put(item1, { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'todo' });   // the hourly sync moves the date
+    run("setStatus('i1', 'done', false)");
+    expect('app done: pending', run('pending()'), true);
+    await run('push()');
+    expect('app done: saved', store.data(item1), { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'done', doneAt: run('today()') });
+    expect('app done: shown', run('item("i1").date'), '2026-11-12');
+    expect('app done: nothing pending after', run('pending()'), false);
+    expect('app done: no error', toasts, []);
+  },
+  async 'an edit made during the save stays on top, and is saved next'() {
+    const { run, store } = app({ [item1]: { id: 'i1', title: 'Ex 1', date: '2026-11-10', status: 'todo' } });
+    await run('load()');
+    store.put(item1, { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'todo' });
+    run("optimistic('item', 'i1', d => { d.status = 'progress'; return d; })");
+    // While the save is reading the server, you write a note.
+    store.onLoad = () => run("patch('item', 'i1', x => { x.note = 'left off at 2b'; return x; })");
+    await run('push()');
+    expect('app during: shown', run('item("i1")'), { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'progress', note: 'left off at 2b' });
+    expect('app during: first save', store.data(item1), { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'progress' });
+    expect('app during: note pending', run('pending()'), true);
+    await run('push()');
+    expect('app during: second save', store.data(item1), { id: 'i1', title: 'Ex 1', date: '2026-11-12', status: 'progress', note: 'left off at 2b' });
+  },
+  async 'a reload with unsaved edits saves them first'() {
+    const { run, store } = app({ [course]: { id: 'c1', name: 'C', profile: { color: 'blue' } } });
+    await run('load()');
+    store.put(course, { id: 'c1', name: 'C', profile: { color: 'blue', rules: ['Claude’s rule'] } });
+    run("patch('course', 'c1', d => { d.profile = { ...(d.profile || {}), color: 'red' }; return d; })");
+    await run('load()');
+    expect('app reload: saved', store.data(course), { id: 'c1', name: 'C', profile: { color: 'red', rules: ['Claude’s rule'] } });
+    expect('app reload: shown', run('course("c1")'), store.data(course));
+  },
+  async 'a download that arrives after an edit doesn’t overwrite it'() {
+    const { run, store } = app({ [item1]: { id: 'i1', title: 'Ex 1', status: 'todo' } });
+    await run('load()');
+    store.put(item1, { id: 'i1', title: 'Ex 1 (renamed)', status: 'todo' });
+    // You mark it done while the download is on its way.
+    const fetchAll = store.loadAll.bind(store);
+    store.loadAll = async () => { const out = await fetchAll(); run("setStatus('i1', 'done', false)"); return out; };
+    await run('load()');
+    expect('app late download: edit kept', run('item("i1").status'), 'done');
+    expect('app late download: base not moved', run('engine.base.get(Sync.key("item", "i1")).title'), 'Ex 1');
+    store.loadAll = fetchAll;
+    await run('push()');
+    expect('app late download: both saved', store.data(item1), { id: 'i1', title: 'Ex 1 (renamed)', status: 'done', doneAt: run('today()') });
+  },
+  async 'a fresh device with empty settings never blanks them'() {
+    const { run, store } = app({ [prefsKey]: { plan: ['i1'], appearance: 'dark' } });
+    run('S.prefs = {}');   // as if the settings hadn't arrived yet
+    expect('app empty prefs: not pending', run('pending()'), false);
+    await run('push()');
+    expect('app empty prefs: no writes', store.writes, 0);
+  },
+  async 'settings change only the key you changed'() {
+    const { run, store } = app({ [prefsKey]: { dateStyle: 'd/M', plan: ['i1'] } });
+    await run('load()');
+    store.put(prefsKey, { dateStyle: 'd/M', plan: ['i1', 'i2'], lastMoodleSync: '2026-11-03T05:00:00Z' });   // the sync and the iPhone app
+    run("setPref('appearance', 'dark')");
+    await run('push()');
+    expect('app prefs: saved', store.data(prefsKey), { dateStyle: 'd/M', plan: ['i1', 'i2'], lastMoodleSync: '2026-11-03T05:00:00Z', appearance: 'dark' });
+  },
+  async 'a chat message is a new note document'() {
+    const { run, store } = app({});
+    await run('load()');
+    run("S.chatDraft = { text: 'What first?' }; sendChat()");
+    await run('push()');
+    const notes = [...store.docs.values()].filter(d => d.key.startsWith('note'));
+    expect('app chat: one note', notes.length, 1);
+    expect('app chat: text', notes[0]?.data.text, 'What first?');
+  },
+  async 'the sync switch: prefs.syncMode whole saves whole documents'() {
+    const { run, store } = app({ [course]: { id: 'c1', profile: { color: 'blue' } }, [prefsKey]: { syncMode: 'whole' } });
+    await run('load()');
+    store.put(course, { id: 'c1', profile: { color: 'blue', rules: ['r'] } });
+    run("patch('course', 'c1', d => { d.profile = { ...(d.profile || {}), color: 'red' }; return d; })");
+    await run('push()');
+    expect('app whole: overwritten', store.data(course), { id: 'c1', profile: { color: 'red' } });
+  },
+  async 'a failed save says so and keeps the edit'() {
+    const { run, store, toasts } = app({ [item1]: { id: 'i1', status: 'todo' } });
+    await run('load()');
+    store.write = async () => { throw new Error('offline'); };
+    run("setStatus('i1', 'done', false)");
+    expect('app offline: push result', await run('push()'), false);
+    ok('app offline: toast', toasts.some(t => /Couldn’t save yet: offline/.test(t)));
+    expect('app offline: still pending', run('pending()'), true);
+    expect('app offline: edit kept', run('item("i1").status'), 'done');
+  },
+  async 'signing in to another account starts empty, so nothing carries over'() {
+    const { run, store } = app({ [item1]: { id: 'i1', status: 'todo' } });
+    await run('load()');
+    run("setStatus('i1', 'done', false); startSync({ id: 'u2' }); engine = new Sync.SyncEngine(__store2, { shape });", { __store2: new (run('Sync').MemoryStore)() });
+    expect('app account: empty', run('[S.items.length, S.courses.length, Object.keys(S.prefs).length]'), [0, 0, 0]);
+    expect('app account: nothing pending', run('pending()'), false);
+    expect('app account: first account untouched', store.data(item1), { id: 'i1', status: 'todo' });
+  },
+};
+for (const [name, run] of Object.entries({ ...cases, ...appCases })) {
   try { await run(); } catch (x) { fails.push(`${name}: threw ${x.stack || x}`); }
 }
-console.log(`sync.js: ${count - fails.length}/${count} checks pass (${Object.keys(cases).length} engine cases)`);
+console.log(`sync.js: ${count - fails.length}/${count} checks pass (${Object.keys(cases).length} engine cases, ${Object.keys(appCases).length} through the app's data layer: ${scripts.join(', ')})`);
 for (const f of fails) console.log(`  FAIL ${f}`);
 process.exit(fails.length ? 1 : 0);
