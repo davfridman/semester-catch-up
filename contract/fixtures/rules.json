@@ -22,7 +22,10 @@
     {"item": {"id": "s18", "type": "Exercise", "date": "2026-11-06"}, "key": "todo", "text": "Due 6/Nov"},
     {"item": {"id": "s19", "type": "Exercise", "date": "2026-11-03", "status": "progress"}, "key": "due", "text": "In progress · due tomorrow"},
     {"item": {"id": "s20", "type": "Lecture", "date": "2026-11-01", "status": "progress"}, "key": "watch", "text": "In progress"},
-    {"item": {"id": "s21", "type": "Exercise", "date": "2026-10-30", "status": "progress"}, "key": "closed", "text": "Missed"}
+    {"item": {"id": "s21", "type": "Exercise", "date": "2026-10-30", "status": "progress"}, "key": "closed", "text": "Missed"},
+    {"item": {"id": "s22", "type": "Exercise", "date": "2026-11-02", "time": "09:00"}, "key": "closed", "text": "Missed"},
+    {"item": {"id": "s23", "type": "Exercise", "date": "2026-11-02", "time": "15:00"}, "key": "due", "text": "Due today"},
+    {"item": {"id": "s24", "type": "Exam", "date": "2026-11-02", "time": "09:00", "optional": true}, "key": "open", "text": "Not taken"}
   ],
   "importance": [
     {"item": {"id": "i1", "type": "Exam"}, "importance": 3},
@@ -73,5 +76,34 @@
     {"prefs": {"semStart": "2026-10-25", "semEnd": "2027-01-22"}, "count": 13, "firstStart": "2026-10-25", "firstEnd": "2026-10-31", "weekOf": {"2026-11-02": 2, "2027-01-22": 13}},
     {"prefs": {}, "count": 15, "firstStart": "2026-10-11", "firstEnd": "2026-10-17", "weekOf": {"2026-11-02": 4}}
   ],
-  "dateStyles": {"date": "2026-11-04", "styles": {"d/MMM": "4/Nov", "d MMM": "4 Nov", "MMM d": "Nov 4", "d/M": "4/11", "d.M": "4.11"}}
+  "dateStyles": {"date": "2026-11-04", "styles": {"d/MMM": "4/Nov", "d MMM": "4 Nov", "MMM d": "Nov 4", "d/M": "4/11", "d.M": "4.11"}},
+  "plan": {
+    "about": "Reading prefs.plan and prefs.planSlots (see semester-ios Plan.swift). `items` are the item ids that exist; `entries`, `slots` and `ids` are the plan as read, always in the current format: every slot an object with name, items and collapsed.",
+    "items": ["i1", "i2", "i3", "i4", "i5", "i6"],
+    "cases": [
+      {"name": "current format",
+       "plan": ["i1", "slot:a", "i4"], "planSlots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": true}},
+       "entries": ["i1", "slot:a", "i4"], "slots": {"slot:a": {"name": "Sunday", "items": ["i2", "i3"], "collapsed": true}},
+       "ids": ["i1", "i2", "i3", "i4"]},
+      {"name": "first-version format: a slot stored as its name, its cards after its marker",
+       "plan": ["i1", "slot:a", "i2", "i3", "slot:b", "i4"], "planSlots": {"slot:a": "Today", "slot:b": {"name": "New", "items": ["i5"]}},
+       "entries": ["i1", "slot:a", "slot:b", "i4"],
+       "slots": {"slot:a": {"name": "Today", "items": ["i2", "i3"], "collapsed": false}, "slot:b": {"name": "New", "items": ["i5"], "collapsed": false}},
+       "ids": ["i1", "i2", "i3", "i5", "i4"]},
+      {"name": "first-version format, saved back in the current format",
+       "plan": ["slot:a", "i2"], "planSlots": {"slot:a": "Today"},
+       "entries": ["slot:a"], "slots": {"slot:a": {"name": "Today", "items": ["i2"], "collapsed": false}},
+       "ids": ["i2"]},
+      {"name": "unknown cards and slots with nothing stored are dropped",
+       "plan": ["i1", "gone", "slot:a", "slot:missing"], "planSlots": {"slot:a": {"name": "S", "items": ["i2", "gone"], "collapsed": false}},
+       "entries": ["i1", "slot:a"], "slots": {"slot:a": {"name": "S", "items": ["i2"], "collapsed": false}},
+       "ids": ["i1", "i2"]},
+      {"name": "unknown cards after a first-version slot are dropped too",
+       "plan": ["slot:a", "gone", "i3"], "planSlots": {"slot:a": "Later"},
+       "entries": ["slot:a"], "slots": {"slot:a": {"name": "Later", "items": ["i3"], "collapsed": false}},
+       "ids": ["i3"]},
+      {"name": "nothing stored",
+       "entries": [], "slots": {}, "ids": []}
+    ]
+  }
 }
