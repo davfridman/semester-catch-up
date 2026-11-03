@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://davfridman.github.io/semester-catch-up/contract/schema/item.json",
+  "title": "Item",
+  "description": "One task, lecture, tutorial or exam (col \"item\"). Locked fields are the user's: the syncs and Claude keep the user's version of every field named in `locked`.",
+  "type": "object",
+  "required": ["id", "c", "type", "title", "date"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "x-writers": ["app", "sync"],
+      "x-note": "Set once, when the item is created; equals the row id. The syncs use m-<cmid>, p-<uuid>, i-<ics uid>, x-<course>-<exam>."
+    },
+    "c": {
+      "type": "string",
+      "x-writers": ["app", "sync"],
+      "description": "The course id."
+    },
+    "type": {
+      "enum": ["Lecture", "Tutorial", "Online unit", "Exercise", "Quiz", "Lab", "Exam", "Project", "Reading"],
+      "x-writers": ["app", "sync"],
+      "description": "Lecture, Tutorial and Online unit are sessions (watched or attended); the rest are tasks."
+    },
+    "n": {
+      "type": "integer",
+      "x-writers": ["app", "sync"],
+      "description": "Its number among the course's items of this type (Lecture 3)."
+    },
+    "title": {
+      "type": "string",
+      "x-writers": ["app", "sync"]
+    },
+    "date": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["app", "sync"],
+      "description": "When a session is held, or when a task is due."
+    },
+    "time": {
+      "$ref": "#/$defs/time",
+      "x-writers": ["app", "sync"]
+    },
+    "endTime": {
+      "$ref": "#/$defs/time",
+      "x-writers": ["sync"],
+      "x-note": "Written by the Shnaton sync for exams."
+    },
+    "opens": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["app", "sync"]
+    },
+    "opensTime": {
+      "$ref": "#/$defs/time",
+      "x-writers": ["app", "sync"]
+    },
+    "link": {
+      "type": "string",
+      "x-writers": ["app", "sync"],
+      "x-note": "The syncs point it at the recording of the user's group; the app also changes it when the user picks another group's recording."
+    },
+    "note": {
+      "type": "string",
+      "x-writers": ["app", "web", "sync"],
+      "x-note": "The user's once \"note\" is in locked (the apps add it on every edit). Until then the syncs keep their own lines in it (exam times, rooms)."
+    },
+    "topic": {
+      "type": "string",
+      "x-writers": ["app"]
+    },
+    "weight": {
+      "type": ["number", "null"],
+      "x-writers": ["app", "sync"],
+      "x-note": "The syncs write null on the items they create.",
+      "description": "Share of the final grade, in percent; null when unknown."
+    },
+    "status": {
+      "enum": ["todo", "progress", "done", "attended", "reviewed", "skip"],
+      "x-writers": ["app", "web", "sync"],
+      "x-note": "The user's. The Moodle sync only sets it when it creates an item, and moves todo to done when Moodle shows the task submitted. A question's effects change it when the user answers (in the app or the web app)."
+    },
+    "optional": {
+      "type": "boolean",
+      "x-writers": ["app", "sync"],
+      "description": "Something you may skip, like an exam's Moed B: once its date passes it reads \"Not taken\", never \"Missed\"."
+    },
+    "hidden": {
+      "type": "boolean",
+      "x-writers": ["app", "web"],
+      "x-note": "Hidden instead of deleted, so the syncs don't add it back. The web app sets it through a question's effects."
+    },
+    "myImportance": {
+      "type": ["integer", "null"],
+      "minimum": -1,
+      "maximum": 1,
+      "x-writers": ["app", "web", "claude"],
+      "x-note": "Claude (claude_edit.py importance) skips items where the user locked it.",
+      "description": "The user's nudge: -1 less important, 0 or null as computed, +1 more."
+    },
+    "locked": {
+      "$ref": "#/$defs/strings",
+      "x-writers": ["user-only"],
+      "description": "The fields the user edited; the syncs and Claude keep the user's version of these."
+    },
+    "group": {
+      "type": "string",
+      "x-writers": ["app"],
+      "description": "The recording group chosen for this one week, when different from the course's usual one."
+    },
+    "duration": {
+      "type": "integer",
+      "x-writers": [],
+      "x-note": "Set when the item was imported; nothing changes it now.",
+      "description": "Length of a session in minutes (90 when missing)."
+    },
+    "stopAt": {
+      "type": "string",
+      "pattern": "^(\\d{1,2}:)?\\d{1,2}:\\d{2}$",
+      "x-writers": ["user-only"],
+      "description": "Where the user stopped watching, \"34:12\"."
+    },
+    "grade": {
+      "type": "number",
+      "x-writers": ["user-only"],
+      "description": "The user's score, 0 to 100."
+    },
+    "meetingId": {
+      "type": "string",
+      "x-writers": [],
+      "x-note": "Set when the item was imported; nothing changes it now.",
+      "description": "Which of the course's weekly meetings this session belongs to."
+    },
+    "source": {
+      "type": "string",
+      "x-writers": ["app", "sync"],
+      "description": "Where it came from: user, moodle, moodle-calendar, panopto, shnaton… Set once, when the item is created."
+    },
+    "estimate": {
+      "type": ["number", "null"],
+      "x-writers": [],
+      "x-note": "Set when the item was imported; nothing changes it now."
+    },
+    "doneAt": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["user-only"],
+      "description": "The day it was marked done or attended; set and cleared with status."
+    },
+    "recordings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "url"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "date": {
+            "$ref": "#/$defs/day"
+          },
+          "group": {
+            "type": "string"
+          }
+        }
+      },
+      "x-writers": ["sync"],
+      "description": "Every recording of this session, sorted by date and group."
+    },
+    "reflection": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/day"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "difficulty": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "minutes": {
+          "type": "number"
+        },
+        "followed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "x-writers": ["user-only"],
+      "description": "What the user said after finishing it: how hard, how long, whether they followed."
+    },
+    "rooms": {
+      "$ref": "#/$defs/strings",
+      "x-writers": ["sync"],
+      "x-note": "Written by the Shnaton sync for exams."
+    },
+    "secondDate": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["sync"],
+      "x-note": "The Shnaton sync's second sitting, when it has no item of its own."
+    },
+    "secondTime": {
+      "$ref": "#/$defs/time",
+      "x-writers": ["sync"]
+    },
+    "icsUid": {
+      "type": "string",
+      "x-writers": ["sync"],
+      "description": "The Moodle calendar event it came from."
+    }
+  },
+  "$defs": {
+    "day": {
+      "type": "string",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+      "description": "A calendar day, \"2026-11-02\", or \"\" for none."
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^(\\d{2}:\\d{2})?$",
+      "description": "A time of day, \"23:59\", or \"\" for none."
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

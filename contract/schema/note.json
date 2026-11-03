@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://davfridman.github.io/semester-catch-up/contract/schema/note.json",
+  "title": "Note",
+  "description": "A note (col \"note\"): a chat message (kind \"chat\"), an idea for the app (kind \"idea\"), or the iPhone app's sync test row (kind \"sync-check\"). The kind picks the schema.",
+  "type": "object",
+  "required": ["kind"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "x-writers": ["app", "web", "claude"],
+      "x-note": "Set once; equals the row id."
+    },
+    "kind": {
+      "enum": ["chat", "idea", "sync-check"],
+      "x-writers": ["app", "web", "claude"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "const": "chat"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/chat"
+      }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "const": "idea"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/idea"
+      }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "const": "sync-check"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/syncCheck"
+      }
+    }
+  ],
+  "$defs": {
+    "stamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}",
+      "description": "An ISO 8601 date and time, \"2026-11-02T20:30:00+02:00\"."
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "kind", "from", "text", "at"],
+      "description": "One message in the chat with Claude.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "kind": {
+          "const": "chat",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "from": {
+          "enum": ["you", "claude"],
+          "x-writers": ["app", "web", "claude"]
+        },
+        "text": {
+          "type": "string",
+          "x-writers": ["app", "web", "claude"],
+          "x-note": "The user's messages are written by the app or the web app, Claude's by claude_edit.py reply."
+        },
+        "at": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "answered": {
+          "type": "boolean",
+          "x-writers": ["claude"],
+          "description": "On the user's messages: Claude has answered."
+        },
+        "replyTo": {
+          "type": "string",
+          "x-writers": ["claude"],
+          "description": "On Claude's replies: the message it answers."
+        },
+        "items": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app", "web", "claude"],
+          "description": "Tasks and lectures the message is about."
+        }
+      }
+    },
+    "idea": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "kind", "text", "at"],
+      "description": "Something the user wants changed in the app (Settings, Ideas for the app).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "kind": {
+          "const": "idea",
+          "x-writers": ["app"]
+        },
+        "text": {
+          "type": "string",
+          "x-writers": ["user-only"]
+        },
+        "at": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app"]
+        },
+        "done": {
+          "type": "boolean",
+          "x-writers": ["claude"],
+          "x-note": "Marked by tools/ideas.py done once shipped."
+        },
+        "hidden": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        }
+      }
+    },
+    "syncCheck": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The iPhone app's live sync test writes this one throwaway row (row id \"sync-check\"); the apps and tools ignore it.",
+      "properties": {
+        "kind": {
+          "const": "sync-check",
+          "x-writers": ["app"]
+        },
+        "n": {
+          "type": "number",
+          "x-writers": ["app"]
+        },
+        "checked": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        }
+      }
+    }
+  }
+}

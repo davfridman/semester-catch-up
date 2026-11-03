@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://davfridman.github.io/semester-catch-up/contract/schema/course.json",
+  "title": "Course",
+  "description": "One course (col \"course\").",
+  "type": "object",
+  "required": ["id", "name", "short"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "x-writers": ["app"],
+      "x-note": "Set once; equals the row id."
+    },
+    "name": {
+      "type": "string",
+      "x-writers": ["app"]
+    },
+    "code": {
+      "type": "string",
+      "x-writers": ["app"],
+      "description": "The HUJI course number; the syncs match the Shnaton and the Moodle calendar by it."
+    },
+    "short": {
+      "type": "string",
+      "x-writers": ["app"],
+      "description": "A short name, \"COMP\"; the syncs use it in their messages."
+    },
+    "moodle": {
+      "type": "string",
+      "x-writers": ["app"],
+      "description": "The course's Moodle link; the Moodle sync matches courses by its id=."
+    },
+    "recordings": {
+      "type": "string",
+      "x-writers": ["app"],
+      "description": "The course's recordings page."
+    },
+    "notes": {
+      "type": "string",
+      "x-writers": ["app"]
+    },
+    "order": {
+      "type": "number",
+      "x-writers": ["app"]
+    },
+    "start": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["app"]
+    },
+    "end": {
+      "$ref": "#/$defs/day",
+      "x-writers": ["app"]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "x-writers": ["app", "web", "claude"],
+          "description": "1 = matters most."
+        },
+        "goal": {
+          "enum": ["pass", "good", "top"],
+          "x-writers": ["app", "web", "claude"]
+        },
+        "hidden": {
+          "type": "boolean",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "trackTutorials": {
+          "type": "boolean",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "rules": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app", "claude"],
+          "description": "What Claude has learned about the course, in plain sentences."
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "x-writers": ["app", "web", "claude"],
+          "description": "The recording group followed per type, {\"Tutorial\": \"12\"}."
+        },
+        "nickname": {
+          "type": "string",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "color": {
+          "type": "string",
+          "x-writers": ["app", "web", "claude"]
+        },
+        "muteReminders": {
+          "type": "boolean",
+          "x-writers": ["app", "web", "claude"]
+        }
+      },
+      "x-writers": ["app", "web", "claude"],
+      "x-note": "Claude changes it with claude_edit.py rule/profile (with an Undo in What's new); the web app only through a question's effects."
+    },
+    "grading": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "count": {
+            "type": ["integer", "null"]
+          }
+        }
+      },
+      "x-writers": ["app"]
+    },
+    "meetings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "time": {
+            "$ref": "#/$defs/time"
+          },
+          "duration": {
+            "type": "integer"
+          }
+        }
+      },
+      "x-writers": ["app"],
+      "description": "The weekly slots the user attends (day 0 = Sunday)."
+    },
+    "classGroups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "time": {
+            "$ref": "#/$defs/time"
+          },
+          "end": {
+            "$ref": "#/$defs/time"
+          },
+          "room": {
+            "type": "string"
+          },
+          "teacher": {
+            "type": "string"
+          }
+        }
+      },
+      "x-writers": ["sync"],
+      "description": "The semester's groups as the Shnaton lists them."
+    }
+  },
+  "$defs": {
+    "day": {
+      "type": "string",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+      "description": "A calendar day, \"2026-11-02\", or \"\" for none."
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^(\\d{2}:\\d{2})?$",
+      "description": "A time of day, \"23:59\", or \"\" for none."
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

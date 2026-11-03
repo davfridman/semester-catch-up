@@ -1,0 +1,442 @@
+[
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "course",
+  "id": "A",
+  "data": {
+   "id": "A",
+   "name": "Course A",
+   "code": "10001",
+   "short": "CRSA",
+   "moodle": "https://moodle.example.org/course/view.php?id=1",
+   "recordings": "",
+   "notes": "",
+   "order": 1,
+   "start": "2026-10-25",
+   "end": "",
+   "profile": {
+    "rank": 1,
+    "goal": "top",
+    "rules": [
+     "Exercises are due on Thursdays."
+    ],
+    "groups": {
+     "Tutorial": "2"
+    },
+    "hidden": false
+   },
+   "grading": [
+    {
+     "id": "g1",
+     "kind": "exam",
+     "label": "Exam",
+     "weight": 70,
+     "count": null
+    }
+   ],
+   "meetings": [
+    {
+     "id": "L",
+     "type": "Lecture",
+     "day": 0,
+     "time": "10:00",
+     "duration": 90
+    }
+   ],
+   "classGroups": [
+    {
+     "type": "Tutorial",
+     "group": "2",
+     "day": 3,
+     "time": "12:00",
+     "end": "14:00",
+     "room": "Room 1",
+     "teacher": ""
+    }
+   ],
+   "somethingNew": 1
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "item",
+  "id": "L-1",
+  "data": {
+   "id": "L-1",
+   "c": "A",
+   "type": "Lecture",
+   "n": 1,
+   "title": "Lecture 1",
+   "date": "2026-10-25",
+   "time": "10:00",
+   "opens": "",
+   "weight": null,
+   "status": "done",
+   "doneAt": "2026-10-26",
+   "duration": 90,
+   "meetingId": "L",
+   "link": "",
+   "note": "",
+   "topic": "",
+   "stopAt": "34:12",
+   "recordings": [
+    {
+     "id": "r1",
+     "url": "https://video.example.org/r1",
+     "date": "2026-10-25",
+     "group": "1"
+    }
+   ],
+   "reflection": {
+    "at": "2026-10-26",
+    "difficulty": 2,
+    "followed": 1
+   }
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "item",
+  "id": "m-1",
+  "data": {
+   "id": "m-1",
+   "c": "A",
+   "type": "Exercise",
+   "n": 1,
+   "title": "Exercise 1",
+   "date": "2026-11-05",
+   "time": "23:59",
+   "opens": "2026-10-29",
+   "opensTime": "09:00",
+   "weight": 5,
+   "status": "todo",
+   "link": "https://moodle.example.org/mod/assign/view.php?id=2",
+   "note": "Synthetic note.",
+   "source": "moodle",
+   "myImportance": 1,
+   "locked": [
+    "note"
+   ],
+   "grade": 87.5,
+   "estimate": null,
+   "icsUid": "ev1@example.org"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "item",
+  "id": "x-1-final",
+  "data": {
+   "id": "x-1-final",
+   "c": "A",
+   "type": "Exam",
+   "n": 1,
+   "title": "Final exam · Moed A",
+   "date": "2027-02-01",
+   "time": "09:00",
+   "endTime": "12:00",
+   "rooms": [
+    "Hall 1"
+   ],
+   "secondDate": "2027-03-01",
+   "secondTime": "",
+   "weight": 70,
+   "status": "todo",
+   "optional": false,
+   "source": "shnaton",
+   "hidden": false,
+   "myImportance": null
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "settings",
+  "id": "prefs",
+  "data": {
+   "id": "prefs",
+   "semStart": "2026-10-25",
+   "semEnd": "2027-01-22",
+   "dateStyle": "d MMM",
+   "showWeekday": true,
+   "appearance": "dark",
+   "plan": [
+    "m-1",
+    "slot:a",
+    "slot:b"
+   ],
+   "planSlots": {
+    "slot:a": {
+     "name": "Sunday",
+     "items": [
+      "L-1"
+     ],
+     "collapsed": false
+    },
+    "slot:b": "Later"
+   },
+   "mutedTips": [
+    "exam"
+   ],
+   "lastSync": "2026-11-02T20:30:00+02:00",
+   "lastMoodleSync": "2026-11-02T18:30:00Z",
+   "breaks": [
+    {
+     "from": "2026-12-24",
+     "to": "2026-12-26",
+     "label": "Break"
+    }
+   ],
+   "summaryTime": "20:30",
+   "syncMode": "whole"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "settings",
+  "id": "moodle",
+  "data": {
+   "token": "synthetic-not-a-token",
+   "name": "Student",
+   "site": "https://moodle.example.org",
+   "connectedAt": "2026-11-02T20:30:00+02:00"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "settings",
+  "id": "github",
+  "data": {
+   "token": "synthetic-not-a-token",
+   "savedAt": "2026-11-02T20:30:00+02:00"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "settings",
+  "id": "claude",
+  "data": {
+   "id": "claude",
+   "reviewedAnnouncements": [
+    "a-1-1"
+   ]
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "question",
+  "id": "q-1",
+  "data": {
+   "id": "q-1",
+   "kind": "choice",
+   "text": "Did you finish Exercise 1?",
+   "course": "A",
+   "status": "answered",
+   "askedAt": "2026-11-02T20:30:00+02:00",
+   "options": [
+    {
+     "id": "yes",
+     "label": "Yes",
+     "effects": [
+      {
+       "col": "item",
+       "id": "m-1",
+       "set": {
+        "status": "done"
+       }
+      }
+     ]
+    },
+    {
+     "id": "no",
+     "label": "No"
+    }
+   ],
+   "answer": {
+    "choice": "yes",
+    "label": "Yes"
+   },
+   "answeredAt": "2026-11-02T20:30:00+02:00",
+   "deferred": 1
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "question",
+  "id": "q-2",
+  "data": {
+   "id": "q-2",
+   "kind": "rank",
+   "text": "Put these in order",
+   "status": "open",
+   "askedAt": "2026-11-02T20:30:00+02:00",
+   "items": [
+    {
+     "id": "A",
+     "label": "Course A"
+    }
+   ]
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "update",
+  "id": "u-1",
+  "data": {
+   "id": "u-1",
+   "kind": "new",
+   "text": "CRSA: Exercise 1",
+   "item": "m-1",
+   "course": "A",
+   "at": "2026-11-02T20:30:00+02:00",
+   "seen": false,
+   "source": "sync"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "update",
+  "id": "c-1",
+  "data": {
+   "id": "c-1",
+   "kind": "claude",
+   "text": "Raised Exercise 1.",
+   "item": "m-1",
+   "course": "A",
+   "at": "2026-11-02T20:30:00+02:00",
+   "seen": true,
+   "undone": false,
+   "source": "claude",
+   "undo": [
+    {
+     "col": "item",
+     "id": "m-1",
+     "set": {
+      "myImportance": null
+     }
+    }
+   ]
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "update",
+  "id": "a-1-1",
+  "data": {
+   "id": "a-1-1",
+   "kind": "announcement",
+   "text": "CRSA: Room change",
+   "detail": "Synthetic announcement.",
+   "link": "https://moodle.example.org/d/1",
+   "course": "A",
+   "at": "2026-11-02T20:30:00+02:00",
+   "seen": false,
+   "source": "moodle"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "insight",
+  "id": "i-1",
+  "data": {
+   "id": "i-1",
+   "text": "Start Exercise 1 early.",
+   "course": "A",
+   "at": "2026-11-02T20:30:00+02:00",
+   "source": "claude",
+   "about": [
+    "a-1-1"
+   ],
+   "feedback": {
+    "useful": true,
+    "at": "2026-11-02T20:30:00+02:00"
+   },
+   "dismissed": false
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "insight",
+  "id": "b-2026-11-02",
+  "data": {
+   "id": "b-2026-11-02",
+   "kind": "brief",
+   "date": "2026-11-02",
+   "text": "A quiet day.",
+   "at": "2026-11-02T20:30:00+02:00",
+   "source": "claude"
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "note",
+  "id": "m-1",
+  "data": {
+   "id": "m-1",
+   "kind": "chat",
+   "from": "you",
+   "text": "What first?",
+   "at": "2026-11-02T20:30:00+02:00",
+   "items": [
+    "m-1"
+   ],
+   "answered": true
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "note",
+  "id": "r-1",
+  "data": {
+   "id": "r-1",
+   "kind": "chat",
+   "from": "claude",
+   "text": "Exercise 1.",
+   "at": "2026-11-02T20:30:00+02:00",
+   "replyTo": "m-1",
+   "items": [
+    "m-1"
+   ]
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "note",
+  "id": "idea-1",
+  "data": {
+   "id": "idea-1",
+   "kind": "idea",
+   "text": "A dark icon.",
+   "at": "2026-11-02T20:30:00+02:00",
+   "done": false
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ },
+ {
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "col": "note",
+  "id": "sync-check",
+  "data": {
+   "kind": "sync-check",
+   "n": 3,
+   "checked": true
+  },
+  "updated_at": "2026-11-02T18:30:00+00:00"
+ }
+]

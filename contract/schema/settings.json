@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://davfridman.github.io/semester-catch-up/contract/schema/settings.json",
+  "title": "Settings",
+  "description": "Settings documents (col \"settings\"). The row id picks the document's schema, see x-documents; data.id may be missing.",
+  "type": "object",
+  "additionalProperties": true,
+  "x-documents": {
+    "prefs": "#/$defs/prefs",
+    "moodle": "#/$defs/moodle",
+    "github": "#/$defs/github",
+    "claude": "#/$defs/claude"
+  },
+  "$defs": {
+    "day": {
+      "type": "string",
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+      "description": "A calendar day, \"2026-11-02\", or \"\" for none."
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^(\\d{2}:\\d{2})?$",
+      "description": "A time of day, \"23:59\", or \"\" for none."
+    },
+    "stamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}",
+      "description": "An ISO 8601 date and time, \"2026-11-02T20:30:00+02:00\"."
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "slot": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "items": {
+              "$ref": "#/$defs/strings"
+            },
+            "collapsed": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "string",
+          "description": "The first version's format: just the name, its cards after its marker in plan."
+        }
+      ]
+    },
+    "prefs": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The user's settings and app state (row id \"prefs\").",
+      "properties": {
+        "id": {
+          "const": "prefs",
+          "x-writers": ["app", "web", "sync", "claude"],
+          "x-note": "Every writer keeps it as is."
+        },
+        "semStart": {
+          "$ref": "#/$defs/day",
+          "x-writers": ["app"],
+          "description": "Default 2026-10-11."
+        },
+        "semEnd": {
+          "$ref": "#/$defs/day",
+          "x-writers": ["app"],
+          "description": "15 weeks when unset."
+        },
+        "breaks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/day"
+              },
+              "to": {
+                "$ref": "#/$defs/day"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "x-writers": ["app"]
+        },
+        "setupDone": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        },
+        "setupAt": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "dateStyle": {
+          "enum": ["d/MMM", "d MMM", "MMM d", "d/M", "d.M"],
+          "x-writers": ["app", "web"]
+        },
+        "showWeekday": {
+          "type": "boolean",
+          "x-writers": ["app", "web"]
+        },
+        "appearance": {
+          "enum": ["system", "dark", "light"],
+          "x-writers": ["app", "web"],
+          "x-note": "The web app removes it for system."
+        },
+        "askReflection": {
+          "type": "boolean",
+          "x-writers": ["app", "web"]
+        },
+        "overviewStyle": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "moodleLinks": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "remindersOn": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        },
+        "summaryOn": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        },
+        "summaryTime": {
+          "$ref": "#/$defs/time",
+          "x-writers": ["app"]
+        },
+        "lastCallOn": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        },
+        "alertsOn": {
+          "type": "boolean",
+          "x-writers": ["app"]
+        },
+        "mutedTips": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app", "claude"],
+          "x-note": "Claude turns tips on or off only when the user asks (claude_edit.py tips)."
+        },
+        "seenInsights": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app"]
+        },
+        "claudeGuidance": {
+          "type": "string",
+          "x-writers": ["user-only"],
+          "description": "What the user wants from Claude, in their own words."
+        },
+        "taskOrder": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app"]
+        },
+        "taskSort": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "plan": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["app", "web"],
+          "description": "The plan's top level in order: item ids and \"slot:<id>\"."
+        },
+        "planSlots": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/slot"
+          },
+          "x-writers": ["app", "web"],
+          "description": "Each slot's name, cards and fold. Written in the current format (objects); the first version's strings are still read."
+        },
+        "lastSync": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["sync"]
+        },
+        "lastMoodleSync": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["sync"]
+        },
+        "lastCalendarSync": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["sync"]
+        },
+        "lastShnatonSync": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["sync"]
+        },
+        "syncMode": {
+          "enum": ["whole"],
+          "x-writers": ["user-only"],
+          "x-note": "Set by tools/sync_mode.py, run by hand; missing means merge."
+        }
+      }
+    },
+    "moodle": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The Moodle connection (row id \"moodle\"): token, name, site, connectedAt. Read by tools/moodle_api.py. Holds a token: tools must never print or copy this document.",
+      "properties": {
+        "token": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "name": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "site": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "connectedAt": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app"]
+        },
+        "savedAt": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app"]
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The GitHub key for the app's Update-now buttons (row id \"github\"): token, savedAt. Holds a token: tools must never print or copy this document.",
+      "properties": {
+        "token": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "name": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "site": {
+          "type": "string",
+          "x-writers": ["app"]
+        },
+        "connectedAt": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app"]
+        },
+        "savedAt": {
+          "$ref": "#/$defs/stamp",
+          "x-writers": ["app"]
+        }
+      }
+    },
+    "claude": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Claude's own state (row id \"claude\").",
+      "properties": {
+        "id": {
+          "const": "claude",
+          "x-writers": ["claude"]
+        },
+        "reviewedAnnouncements": {
+          "$ref": "#/$defs/strings",
+          "x-writers": ["claude"],
+          "description": "Announcement update ids Claude read that needed no insight (the last 300)."
+        }
+      }
+    }
+  }
+}

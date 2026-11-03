@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://davfridman.github.io/semester-catch-up/contract/schema/update.json",
+  "title": "Update",
+  "description": "One entry in What's new (col \"update\"): something a sync found, an announcement, a warning, or a change Claude made (with its Undo).",
+  "type": "object",
+  "required": ["id", "kind", "text", "at"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "x-writers": ["sync", "claude"]
+    },
+    "kind": {
+      "enum": ["new", "changed", "date", "submitted", "recording", "warning", "claude", "announcement"],
+      "x-writers": ["sync", "claude"]
+    },
+    "text": {
+      "type": "string",
+      "x-writers": ["sync", "claude"]
+    },
+    "item": {
+      "type": "string",
+      "x-writers": ["sync", "claude"]
+    },
+    "course": {
+      "type": "string",
+      "x-writers": ["sync", "claude"]
+    },
+    "at": {
+      "$ref": "#/$defs/stamp",
+      "x-writers": ["sync", "claude"]
+    },
+    "detail": {
+      "type": "string",
+      "x-writers": ["sync"],
+      "description": "An announcement's text; the Moodle sync replaces a shortened one with the full text."
+    },
+    "link": {
+      "type": "string",
+      "x-writers": ["sync"]
+    },
+    "source": {
+      "type": "string",
+      "x-writers": ["sync", "claude"],
+      "description": "sync, moodle, shnaton or claude."
+    },
+    "undo": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/patch"
+      },
+      "x-writers": ["claude"],
+      "description": "For Claude's changes: how to put things back."
+    },
+    "seen": {
+      "type": "boolean",
+      "x-writers": ["app", "web"],
+      "x-note": "The writer sets false when it adds the entry."
+    },
+    "undone": {
+      "type": "boolean",
+      "x-writers": ["app"]
+    }
+  },
+  "$defs": {
+    "stamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}",
+      "description": "An ISO 8601 date and time, \"2026-11-02T20:30:00+02:00\"."
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "A change to one document: the fields to set on an item (only status, myImportance and hidden are applied) or on a course's profile. A null value removes the field.",
+      "required": ["col", "id"],
+      "properties": {
+        "col": {
+          "enum": ["item", "course"]
+        },
+        "id": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

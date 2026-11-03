@@ -1,0 +1,341 @@
+{
+ "about": "Synthetic documents that break the contract, and where contract_check.py --self-test must find a problem: [col, row id, field path].",
+ "rows": [
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "item",
+   "id": "bad-1",
+   "data": {
+    "id": "bad-1",
+    "c": "A",
+    "type": "Homework",
+    "title": "Synthetic",
+    "date": "2026-11-5",
+    "status": "finished",
+    "weight": "10",
+    "myImportance": 2,
+    "locked": "note",
+    "time": "9am"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "item",
+   "id": "bad-2",
+   "data": {
+    "id": "other-id",
+    "type": "Exercise",
+    "title": "Synthetic",
+    "date": "2026-11-05",
+    "recordings": [
+     {
+      "id": "r"
+     }
+    ],
+    "reflection": {
+     "difficulty": 5
+    }
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "course",
+   "id": "bad-3",
+   "data": {
+    "id": "bad-3",
+    "name": "Course B",
+    "profile": {
+     "goal": "ace",
+     "rank": "first"
+    },
+    "meetings": [
+     {
+      "day": 7
+     }
+    ]
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "settings",
+   "id": "prefs",
+   "data": {
+    "id": "prefs",
+    "dateStyle": "yyyy",
+    "planSlots": {
+     "slot:a": 3
+    },
+    "plan": "m-1",
+    "lastSync": "yesterday"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "settings",
+   "id": "mystery",
+   "data": {
+    "x": 1
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "question",
+   "id": "bad-4",
+   "data": {
+    "id": "bad-4",
+    "kind": "poll",
+    "options": [
+     {
+      "id": "a",
+      "effects": [
+       {
+        "col": "grade",
+        "id": "m-1"
+       }
+      ]
+     }
+    ]
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "update",
+   "id": "bad-5",
+   "data": {
+    "id": "bad-5",
+    "kind": "new",
+    "text": "Synthetic",
+    "at": "2026-11-02",
+    "seen": "no"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "insight",
+   "id": "bad-6",
+   "data": {
+    "id": "bad-6",
+    "text": "Synthetic",
+    "at": "2026-11-02T20:30:00+02:00",
+    "kind": "card",
+    "feedback": {
+     "useful": "yes"
+    }
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "note",
+   "id": "bad-7",
+   "data": {
+    "id": "bad-7",
+    "kind": "chat",
+    "from": "someone",
+    "text": "Synthetic"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "note",
+   "id": "bad-8",
+   "data": {
+    "id": "bad-8",
+    "kind": "idea",
+    "at": "2026-11-02T20:30:00+02:00"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "grades",
+   "id": "bad-9",
+   "data": {
+    "id": "bad-9"
+   },
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  },
+  {
+   "user_id": "00000000-0000-0000-0000-000000000000",
+   "col": "item",
+   "id": "bad-10",
+   "data": "not an object",
+   "updated_at": "2026-11-02T18:30:00+00:00"
+  }
+ ],
+ "expect": [
+  [
+   "item",
+   "bad-1",
+   "type"
+  ],
+  [
+   "item",
+   "bad-1",
+   "date"
+  ],
+  [
+   "item",
+   "bad-1",
+   "status"
+  ],
+  [
+   "item",
+   "bad-1",
+   "weight"
+  ],
+  [
+   "item",
+   "bad-1",
+   "myImportance"
+  ],
+  [
+   "item",
+   "bad-1",
+   "locked"
+  ],
+  [
+   "item",
+   "bad-1",
+   "time"
+  ],
+  [
+   "item",
+   "bad-2",
+   "c"
+  ],
+  [
+   "item",
+   "bad-2",
+   "id"
+  ],
+  [
+   "item",
+   "bad-2",
+   "recordings[0].url"
+  ],
+  [
+   "item",
+   "bad-2",
+   "reflection.difficulty"
+  ],
+  [
+   "course",
+   "bad-3",
+   "short"
+  ],
+  [
+   "course",
+   "bad-3",
+   "profile.goal"
+  ],
+  [
+   "course",
+   "bad-3",
+   "profile.rank"
+  ],
+  [
+   "course",
+   "bad-3",
+   "meetings[0].day"
+  ],
+  [
+   "settings",
+   "prefs",
+   "dateStyle"
+  ],
+  [
+   "settings",
+   "prefs",
+   "planSlots.slot:a"
+  ],
+  [
+   "settings",
+   "prefs",
+   "plan"
+  ],
+  [
+   "settings",
+   "prefs",
+   "lastSync"
+  ],
+  [
+   "settings",
+   "mystery",
+   ""
+  ],
+  [
+   "question",
+   "bad-4",
+   "text"
+  ],
+  [
+   "question",
+   "bad-4",
+   "kind"
+  ],
+  [
+   "question",
+   "bad-4",
+   "options[0].label"
+  ],
+  [
+   "question",
+   "bad-4",
+   "options[0].effects[0].col"
+  ],
+  [
+   "update",
+   "bad-5",
+   "at"
+  ],
+  [
+   "update",
+   "bad-5",
+   "seen"
+  ],
+  [
+   "insight",
+   "bad-6",
+   "kind"
+  ],
+  [
+   "insight",
+   "bad-6",
+   "feedback.useful"
+  ],
+  [
+   "note",
+   "bad-7",
+   "from"
+  ],
+  [
+   "note",
+   "bad-7",
+   "at"
+  ],
+  [
+   "note",
+   "bad-8",
+   "text"
+  ],
+  [
+   "grades",
+   "bad-9",
+   ""
+  ],
+  [
+   "item",
+   "bad-10",
+   ""
+  ]
+ ]
+}
