@@ -2,3 +2,5 @@
 *.local.json
 __pycache__/
 demo-local.json
+# Duplicates macOS makes on an iCloud-synced Desktop
+* 2.*
