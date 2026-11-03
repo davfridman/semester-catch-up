@@ -9,7 +9,8 @@
     "prefs": "#/$defs/prefs",
     "moodle": "#/$defs/moodle",
     "github": "#/$defs/github",
-    "claude": "#/$defs/claude"
+    "claude": "#/$defs/claude",
+    "recordings": "#/$defs/recordings"
   },
   "$defs": {
     "day": {
@@ -230,6 +231,25 @@
         "savedAt": {
           "$ref": "#/$defs/stamp",
           "x-writers": ["app"]
+        }
+      }
+    },
+    "recordings": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Recording links the iPhone app read from Moodle course pages when the student tapped \"Get recordings\" (row id \"recordings\"). Only links: tools/moodle_sync.py attaches each one to its lecture. Written directly by the app, like the moodle row; not one of the synced documents.",
+      "properties": {
+        "courses": {
+          "type": "object",
+          "x-writers": ["app"],
+          "description": "Moodle course id → [[title, Panopto session id], …], as the course's Panopto block lists them.",
+          "additionalProperties": {"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}}
+        },
+        "readAt": {
+          "type": "object",
+          "x-writers": ["app"],
+          "description": "Moodle course id → when the app last read that course's links.",
+          "additionalProperties": {"$ref": "#/$defs/stamp"}
         }
       }
     },

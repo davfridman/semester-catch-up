@@ -2,8 +2,9 @@
 """Daily Moodle sync for the Semester Catch-Up app (Supabase edition).
 
 Usage: moodle_sync.py [--moodle MOODLE.json] [--dry-run]
-  --moodle  JSON returned by moodle_snippet.js in a signed-in Moodle tab (activities, Panopto recordings, submissions).
-            Without it, only the Moodle calendar feed is used (deadlines and opening dates).
+  --moodle  JSON returned by moodle_snippet.js in a signed-in Moodle tab (activities, Panopto recordings, submissions),
+            or by moodle_api.py. Without it, only the Moodle calendar is used (deadlines and opening dates).
+Recording links the iPhone app saved (settings/recordings, its "Get recordings" button) are matched to lectures too.
 Reads ~/.config/semester-catchup/supabase.local.json ({url, service_key, email}) and the private calendar feed link in
 ~/.config/semester-catchup/moodle-ics-url. Never changes what the student set: done/skipped status, topics, notes.
 """
@@ -184,6 +185,13 @@ def main():
             # The Mac's browser run, which only brings recordings.
             summary.append('! New recordings couldn’t be read: the Mac’s Moodle sign-in expired. Open the Claude app’s browser on the Mac and sign in to Moodle. Everything else is up to date.')
         moodle = None
+    # Recording links the iPhone app read from a course's Moodle page when the student tapped "Get recordings"
+    # (settings/recordings: {courses: {moodle course id: [[title, uuid], ...]}}). They're matched to lectures below,
+    # like the ones a --moodle file brings; a --moodle file's links win for the same course.
+    saved = next((r['data'] for r in rows if r['col'] == 'settings' and r['id'] == 'recordings'), None) or {}
+    if isinstance(saved.get('courses'), dict) and saved['courses']:
+        moodle = moodle or {'courses': {}, 'activities': {}, 'status': {}}
+        moodle['panopto'] = {**saved['courses'], **(moodle.get('panopto') or {})}
     seen_updates = {r['id'] for r in rows if r['col'] == 'update'}
     update_docs = {r['id']: r['data'] for r in rows if r['col'] == 'update'}
     claimed = set()
