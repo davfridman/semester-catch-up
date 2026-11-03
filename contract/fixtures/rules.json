@@ -1,0 +1,77 @@
+{
+  "about": "How the app's rules behave on 2 Nov 2026, pinned before the restructure. Every case is checked at noon on `now`, local time, with the default date style d/MMM.",
+  "now": "2026-11-02",
+  "status": [
+    {"item": {"id": "s1", "type": "Lecture", "date": "2026-11-05"}, "key": "open", "text": "Upcoming"},
+    {"item": {"id": "s2", "type": "Lecture", "date": "2026-11-02"}, "key": "watch", "text": "Today"},
+    {"item": {"id": "s3", "type": "Tutorial", "date": "2026-11-01"}, "key": "watch", "text": "Yesterday"},
+    {"item": {"id": "s4", "type": "Lecture", "date": "2026-10-28"}, "key": "watch", "text": "5 days behind"},
+    {"item": {"id": "s5", "type": "Lecture", "date": "2026-10-28", "status": "done"}, "key": "done", "text": "Watched"},
+    {"item": {"id": "s6", "type": "Exercise", "date": "2026-10-28", "status": "done"}, "key": "done", "text": "Done"},
+    {"item": {"id": "s7", "type": "Tutorial", "date": "2026-10-28", "status": "attended"}, "key": "done", "text": "Attended"},
+    {"item": {"id": "s8", "type": "Exercise", "date": "2026-10-28", "status": "reviewed"}, "key": "reviewed", "text": "Went over it"},
+    {"item": {"id": "s9", "type": "Lecture", "date": "2026-10-28", "status": "reviewed"}, "key": "reviewed", "text": "Skimmed"},
+    {"item": {"id": "s10", "type": "Exercise", "date": "2026-11-10", "status": "skip"}, "key": "wont", "text": "Won’t do"},
+    {"item": {"id": "s11", "type": "Lecture", "date": "2026-10-28", "status": "skip"}, "key": "wont", "text": "Won’t watch"},
+    {"item": {"id": "s12", "type": "Exercise", "date": "2026-11-10", "opens": "2026-11-04"}, "key": "open", "text": "Opens 4/Nov"},
+    {"item": {"id": "s13", "type": "Exercise", "date": "2026-10-30"}, "key": "closed", "text": "Missed"},
+    {"item": {"id": "s14", "type": "Exam", "date": "2026-10-30", "optional": true}, "key": "open", "text": "Not taken"},
+    {"item": {"id": "s15", "type": "Exercise", "date": "2026-11-02"}, "key": "due", "text": "Due today"},
+    {"item": {"id": "s16", "type": "Exercise", "date": "2026-11-03"}, "key": "due", "text": "Due tomorrow"},
+    {"item": {"id": "s17", "type": "Quiz", "date": "2026-11-05"}, "key": "due", "text": "Due Thu"},
+    {"item": {"id": "s18", "type": "Exercise", "date": "2026-11-06"}, "key": "todo", "text": "Due 6/Nov"},
+    {"item": {"id": "s19", "type": "Exercise", "date": "2026-11-03", "status": "progress"}, "key": "due", "text": "In progress · due tomorrow"},
+    {"item": {"id": "s20", "type": "Lecture", "date": "2026-11-01", "status": "progress"}, "key": "watch", "text": "In progress"},
+    {"item": {"id": "s21", "type": "Exercise", "date": "2026-10-30", "status": "progress"}, "key": "closed", "text": "Missed"}
+  ],
+  "importance": [
+    {"item": {"id": "i1", "type": "Exam"}, "importance": 3},
+    {"item": {"id": "i2", "type": "Exercise", "note": "Required to sit the exam"}, "importance": 3},
+    {"item": {"id": "i3", "type": "Exercise", "weight": 10}, "importance": 3},
+    {"item": {"id": "i4", "type": "Exercise", "weight": 3}, "importance": 2},
+    {"item": {"id": "i5", "type": "Project"}, "importance": 2},
+    {"item": {"id": "i6", "type": "Exercise"}, "importance": 1},
+    {"item": {"id": "i7", "type": "Exercise", "myImportance": 1}, "importance": 2},
+    {"item": {"id": "i8", "type": "Exam", "myImportance": -1}, "importance": 2},
+    {"item": {"id": "i9", "type": "Exam", "myImportance": 1}, "importance": 3},
+    {"item": {"id": "i10", "type": "Exercise", "myImportance": -1}, "importance": 1}
+  ],
+  "priority": [
+    {"item": {"id": "p1", "type": "Exercise", "weight": 5, "date": "2026-11-03"}, "score": 16.5},
+    {"item": {"id": "p2", "type": "Exam", "weight": 30, "date": "2026-11-12"}, "score": 8.5},
+    {"item": {"id": "p3", "type": "Exercise", "date": "2026-11-05"}, "score": 7.5},
+    {"item": {"id": "p4", "type": "Reading"}, "score": 1.25}
+  ],
+  "ranking": {
+    "about": "A top course's 5% exercise outranks a just-pass course's 10% quiz on the same day.",
+    "courses": [
+      {"id": "A", "profile": {"rank": 1, "goal": "top"}},
+      {"id": "B", "profile": {"rank": 2, "goal": "pass"}},
+      {"id": "C", "profile": {"rank": 3}}
+    ],
+    "items": [
+      {"id": "b1", "c": "B", "type": "Quiz", "weight": 10, "date": "2027-06-01"},
+      {"id": "a1", "c": "A", "type": "Exercise", "weight": 5, "date": "2027-06-01"},
+      {"id": "c1", "c": "C", "type": "Exercise", "weight": 5, "date": "2027-06-01"}
+    ],
+    "order": ["a1", "b1", "c1"],
+    "scores": {"a1": 3.59375, "b1": 3.0, "c1": 2.125}
+  },
+  "catchUp": {
+    "items": [
+      {"id": "k1", "type": "Lecture", "date": "2026-10-28"},
+      {"id": "k2", "type": "Lecture", "date": "2026-10-29", "status": "done"},
+      {"id": "k3", "type": "Exercise", "weight": 3, "date": "2026-10-30", "status": "reviewed"},
+      {"id": "k4", "type": "Exercise", "date": "2026-11-10"},
+      {"id": "k5", "type": "Exam", "date": "2026-10-25", "optional": true},
+      {"id": "k6", "type": "Exam", "weight": 20, "date": "2026-10-20", "status": "done"},
+      {"id": "k7", "type": "Lecture", "date": "2026-11-04"}
+    ],
+    "handled": 5, "total": 7, "behind": 1, "percent": "71%"
+  },
+  "weeks": [
+    {"prefs": {"semStart": "2026-10-25", "semEnd": "2027-01-22"}, "count": 13, "firstStart": "2026-10-25", "firstEnd": "2026-10-31", "weekOf": {"2026-11-02": 2, "2027-01-22": 13}},
+    {"prefs": {}, "count": 15, "firstStart": "2026-10-11", "firstEnd": "2026-10-17", "weekOf": {"2026-11-02": 4}}
+  ],
+  "dateStyles": {"date": "2026-11-04", "styles": {"d/MMM": "4/Nov", "d MMM": "4 Nov", "MMM d": "Nov 4", "d/M": "4/11", "d.M": "4.11"}}
+}
