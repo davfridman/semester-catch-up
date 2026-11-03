@@ -13,31 +13,13 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // ---------- State ----------
 const S = { user: null, courses: [], items: [], prefs: {}, questions: [], updates: [], insights: [], chat: [], loaded: false,
   tab: 'overview', route: [], list: 'plan', courseTab: 'tasks', day: null, sheet: null };
-const SESSION_TYPES = new Set(['Lecture', 'Tutorial', 'Online unit']);
 const COLORS = ['blue', 'purple', 'pink', 'teal', 'indigo', 'orange', 'cyan', 'brown'];
 
-// ---------- Dates (local time, like the app) ----------
-const pad = n => String(n).padStart(2, '0');
-const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const parse = s => (s && s.length === 10 ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : null);
-const today = () => iso(new Date());
-const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-const daysBetween = (a, b) => Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()) - new Date(a.getFullYear(), a.getMonth(), a.getDate())) / 864e5);
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const nowHHmm = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-function dm(s) {
-  const d = typeof s === 'string' ? parse(s) : s; if (!d) return '';
-  const day = d.getDate(), m = d.getMonth();
-  switch (S.prefs.dateStyle) {
-    case 'd MMM': return `${day} ${MONTHS[m]}`;
-    case 'MMM d': return `${MONTHS[m]} ${day}`;
-    case 'd/M': return `${day}/${m + 1}`;
-    case 'd.M': return `${day}.${m + 1}`;
-    default: return `${day}/${MONTHS[m]}`;
-  }
-}
-const dow = s => { const d = parse(s); return d ? DOW[d.getDay()] : ''; };
+// ---------- Rules and dates (local time, like the app) ----------
+// The rules themselves are in rules.js (shared with check_web.mjs); here they're bound to this page's state.
+const { pad, iso, parse, addDays, daysBetween, DOW, dow, isSession, status, isHandled, inProgress, isGate, profile, importance, isSlot } = Rules;
+const today = (now = new Date()) => iso(now);
+const dm = s => Rules.dm(s, S.prefs.dateStyle);
 const dayLabel = s => (S.prefs.showWeekday === false || !parse(s) ? dm(s) : `${dow(s)} ${dm(s)}`);
 function ago(t) {
   const d = new Date(t); if (isNaN(d)) return '';
@@ -49,13 +31,8 @@ function ago(t) {
 const longDate = () => new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
 // ---------- Models ----------
-const isSession = it => SESSION_TYPES.has(it.type);
-const status = it => it.status || 'todo';
-const isHandled = it => ['done', 'skip', 'attended', 'reviewed'].includes(status(it));
-const inProgress = it => status(it) === 'progress';
 const course = id => S.courses.find(c => c.id === id);
 const item = id => S.items.find(i => i.id === id);
-const profile = c => (c && c.profile) || {};
 const short = c => (c ? c.short || (c.name || '').slice(0, 4).toUpperCase() : '');
 function displayName(c) {
   if (!c) return '';
@@ -73,90 +50,21 @@ const color = id => (course(id) ? `var(--c-${colorName(id)})` : 'var(--label2)')
 const visibleCourses = () => S.courses.filter(c => !profile(c).hidden).sort((a, b) => (profile(a).rank ?? 1000) - (profile(b).rank ?? 1000) || (a.order ?? 99) - (b.order ?? 99));
 const visibleItems = () => { const hid = new Set(S.courses.filter(c => profile(c).hidden).map(c => c.id)); return S.items.filter(i => !i.hidden && !hid.has(i.c)); };
 const isExam = it => !isSession(it) && (it.type === 'Exam' || /exam|midterm|final|מבחן|בחינה/i.test(it.title || ''));
-const isGate = it => /required|gate/i.test(it.note || '');
 const fmt = v => (v === Math.round(v) ? String(v) : v.toFixed(1));
 
-function state(it, now = new Date()) {
-  const s = baseState(it, now);
-  if (!inProgress(it) || s.key === 'closed' || s.key === 'open') return s;
-  return { key: s.key, text: isSession(it) ? 'In progress' : `In progress · ${s.text.toLowerCase()}` };
-}
-function baseState(it, now) {
-  const t = iso(now), st = status(it);
-  if (st === 'done') return { key: 'done', text: isSession(it) ? 'Watched' : 'Done' };
-  if (st === 'attended') return { key: 'done', text: 'Attended' };
-  if (st === 'reviewed') return { key: 'reviewed', text: isSession(it) ? 'Skimmed' : 'Went over it' };
-  if (st === 'skip') return { key: 'wont', text: isSession(it) ? 'Won’t watch' : 'Won’t do' };
-  if (isSession(it)) {
-    if (it.date > t) return { key: 'open', text: 'Upcoming' };
-    const a = parse(it.date) ? daysBetween(parse(it.date), now) : 0;
-    return { key: 'watch', text: a === 0 ? 'Today' : a === 1 ? 'Yesterday' : `${a} days behind` };
-  }
-  if (it.opens && it.opens > t) return { key: 'open', text: `Opens ${dm(it.opens)}` };
-  const n = parse(it.date) ? daysBetween(now, parse(it.date)) : 0;
-  const passed = n < 0 || (n === 0 && it.time && it.time < nowHHmm());
-  if (passed && it.optional) return { key: 'open', text: 'Not taken' };   // an exam's Moed B, for example
-  if (passed) return { key: 'closed', text: 'Missed' };
-  if (n <= 3) return { key: 'due', text: n === 0 ? 'Due today' : n === 1 ? 'Due tomorrow' : `Due ${dow(it.date)}` };
-  return { key: 'todo', text: `Due ${dm(it.date)}` };
-}
-const isOpenish = it => ['todo', 'due', 'watch'].includes(state(it).key);
-function importance(it) {
-  const w = it.weight || 0;
-  const base = it.type === 'Exam' || isGate(it) || w >= 10 ? 3 : w >= 3 || it.type === 'Project' ? 2 : 1;
-  return Math.min(3, Math.max(1, base + (it.myImportance || 0)));
-}
-function rankedTasks(items) {
-  const goal = { pass: 0.8, good: 1, top: 1.25 }, f = {};
-  const ranked = S.courses.filter(c => profile(c).rank != null).sort((a, b) => profile(a).rank - profile(b).rank);
-  for (const c of S.courses) f[c.id] = goal[profile(c).goal] ?? 1;
-  ranked.forEach((c, i) => { if (ranked.length > 1) f[c.id] *= 1.15 - 0.3 * i / (ranked.length - 1); });
-  const score = it => {
-    const d = parse(it.date) ? daysBetween(new Date(), parse(it.date)) : 99;
-    const u = d <= 1 ? 4 : d <= 3 ? 3 : d <= 7 ? 2 : d <= 14 ? 1 : 0.5;
-    return (u * (1 + importance(it) * 1.5) + (it.weight || 0) / 10) * (f[it.c] ?? 1);
-  };
-  return items.filter(i => !isSession(i) && isOpenish(i)).sort((a, b) => score(b) - score(a));
-}
-function catchUp(items) {
-  const t = today(); let handled = 0, total = 0, behind = 0;
-  for (const it of items) {
-    if (!it.date || (it.optional && !isHandled(it))) continue;
-    const happened = isSession(it) ? it.date <= t : it.date < t || state(it).key === 'closed';
-    if (!happened) continue;
-    const w = importance(it); total += w;
-    if (isHandled(it)) handled += status(it) === 'reviewed' ? w / 2 : w; else if (isSession(it)) behind++;
-  }
-  const fraction = total > 0 ? handled / total : null;
-  return { fraction, behind, percent: fraction == null ? '—' : `${Math.round(fraction * 100)}%` };
-}
-function weeks() {
-  const start = parse(S.prefs.semStart) || parse('2026-10-11');
-  let count = 15;
-  if (parse(S.prefs.semEnd)) count = Math.max(1, Math.ceil((daysBetween(start, parse(S.prefs.semEnd)) + 1) / 7));
-  return Array.from({ length: count }, (_, i) => { const s = addDays(start, i * 7); return { n: i + 1, ws: iso(s), we: iso(addDays(s, 6)) }; });
-}
-const currentWeek = () => { const t = today(), w = weeks(); return w.find(x => t >= x.ws && t <= x.we) || (t < w[0].ws ? w[0] : w[w.length - 1]); };
-// The plan: prefs.plan is the top level in order (item ids and "slot:<id>"); prefs.planSlots holds each slot's
-// name, cards and fold. A slot is a named group of cards that moves as one. The first version kept a slot's cards
-// after it in prefs.plan; that's read the same way.
-const isSlot = e => String(e).startsWith('slot:');
-function planModel() {
-  const stored = S.prefs.planSlots || {}, entries = [], slots = {}; let legacy = null;
-  for (const e of S.prefs.plan || []) {
-    if (isSlot(e) && stored[e] != null) {
-      const v = stored[e];
-      slots[e] = typeof v === 'object' ? { name: v.name || '', items: (v.items || []).filter(x => item(x)), collapsed: !!v.collapsed } : { name: String(v), items: [], collapsed: false };
-      legacy = typeof v === 'object' ? null : e; entries.push(e);
-    } else if (item(e)) { if (legacy) slots[legacy].items.push(e); else entries.push(e); }
-  }
-  return { entries, slots };
-}
+const state = (it, now = new Date()) => Rules.state(it, now, S.prefs.dateStyle);
+const isOpenish = (it, now = new Date()) => Rules.isOpenish(it, now);
+const rankedTasks = (items, now = new Date()) => Rules.rankedTasks(items, S.courses, now);
+const catchUp = (items, now = new Date()) => Rules.catchUp(items, now);
+const weeks = () => Rules.weeks(S.prefs);
+const currentWeek = (now = new Date()) => Rules.currentWeek(weeks(), now);
+// The plan (format in rules.js): prefs.plan is the top level, prefs.planSlots each slot's name, cards and fold.
+const planModel = () => Rules.planModel(S.prefs, id => !!item(id));
 const savePlan = m => optimistic('settings', 'prefs', p => { p.plan = m.entries; p.planSlots = m.slots; return p; });
 const slotNames = () => Object.fromEntries(Object.entries(planModel().slots).map(([k, v]) => [k, v.name]));
 const slotItems = id => (planModel().slots[id]?.items || []).map(item);
 const slotOf = id => Object.entries(planModel().slots).find(([, v]) => v.items.includes(id))?.[0];
-const planIDs = () => { const m = planModel(); return m.entries.flatMap(e => isSlot(e) ? m.slots[e].items : [e]); };
+const planIDs = () => Rules.planIDs(planModel());
 const planItems = () => planIDs().map(item).filter(i => i && !i.hidden);
 const attendance = its => { const held = its.filter(i => isSession(i) && i.type !== 'Online unit' && i.date <= today()); return { attended: held.filter(i => status(i) === 'attended').length, held: held.length }; };
 const isRTL = s => { let r = 0, l = 0; for (const ch of String(s || '')) { if (/[֐-ࣿיִ-﷿]/.test(ch)) r++; else if (/\p{L}/u.test(ch)) l++; } return r > l; };
