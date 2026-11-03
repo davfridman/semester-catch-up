@@ -138,14 +138,24 @@ function planFollow(x, y) {
 /// Where the carried one lands if dropped at (x, y): among a slot's cards when a card is over a slot's box,
 /// otherwise on the top level. Measured against what's on screen, leaving the carried one out so the gap doesn't
 /// chase the finger. Indexes are in the draft without the carried one, which also counts hidden cards.
+/// Where an element sits once it stops moving (in the window's coordinates): its layout box, which leaves out the
+/// slide-aside animations, so the landing place doesn't flicker while things are still on their way.
+function planLayoutRect(el) {
+  let top = 0, left = 0;
+  for (let e = el; e; e = e.offsetParent) { top += e.offsetTop; left += e.offsetLeft; }
+  top -= scrollY; left -= scrollX;
+  return { top, left, bottom: top + el.offsetHeight, right: left + el.offsetWidth, height: el.offsetHeight };
+}
 function planPlaceAt(x, y) {
   const d = planDrag, mine = el => el.dataset.pid !== d.id;
   const without = Rules.planMoving(d.draft, d.id, { top: 0 }); without.entries.shift();
-  const index = (els, list) => { const after = els.find(el => { const r = el.getBoundingClientRect(); return r.top + r.height / 2 >= y; });
+  const index = (els, list) => { const after = els.find(el => { const r = planLayoutRect(el); return r.top + r.height / 2 >= y; });
     return after ? list.indexOf(after.dataset.pid) : list.length; };
   const top = [...document.querySelectorAll('#app .plan-list > [data-pid]')].filter(mine);
   if (!d.isSlot) {
-    const box = top.find(el => { const r = el.getBoundingClientRect(); return isSlot(el.dataset.pid) && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
+    // The top and bottom 22 px of a slot's box count as outside it, so a card lands loose between two slots easily.
+    const box = top.find(el => { const r = planLayoutRect(el), edge = Math.min(22, r.height / 4);
+      return isSlot(el.dataset.pid) && x >= r.left && x <= r.right && y >= r.top + edge && y <= r.bottom - edge; });
     if (box) { const s = box.dataset.pid, items = without.slots[s].items;
       return { slot: s, at: without.slots[s].collapsed ? items.length : index([...box.querySelectorAll('[data-pid]')].filter(mine), items) }; }
   }
@@ -182,11 +192,13 @@ function planDrop() {
 // ---------- Views ----------
 function planScreen() {
   const m = planDrag?.draft || planModel(), ids = Rules.planIDs(m), plan = planItems(), open = plan.filter(i => !isHandled(i)).length;
-  const gap = id => planDrag?.id === id ? 'visibility:hidden' : '';
+  // The carried card's gap; loose next to a slot it opens a little wider, so it's clearly a place to drop.
+  const nearSlot = k => k >= 0 && (isSlot(m.entries[k - 1] ?? '') || isSlot(m.entries[k + 1] ?? ''));
+  const gap = (id, k = -1) => planDrag?.id === id ? `visibility:hidden${nearSlot(k) ? ';margin:6px 0' : ''}` : '';
   const btn = (attrs, label, text) => `<button class="round" style="width:32px;height:32px;font-size:14px" ${attrs} aria-label="${label}" title="${label}">${text}</button>`;
   // The number, with ⋯ (move to a slot, take out, remove) under it; ↑ ↓ on the right.
   const num = id => `<span class="pnum"><b>${ids.indexOf(id) + 1}</b><button data-cardmenu="${esc(id)}" aria-label="More" title="Move to a slot, take out, remove">⋯</button></span>`;
-  const cardRow = (it, list, k) => `<div data-pid="${esc(it.id)}" style="display:flex;gap:6px;align-items:center;${gap(it.id)}">${num(it.id)}<div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
+  const cardRow = (it, list, k) => `<div data-pid="${esc(it.id)}" style="display:flex;gap:6px;align-items:center;${gap(it.id, list === m.entries ? k : -1)}">${num(it.id)}<div style="flex:1;min-width:0">${card(it, { showPlanTag: false })}</div>
     <div style="display:grid;gap:2px">${btn(`data-pmove="${esc(it.id)}" data-dir="-1" ${k === 0 ? 'disabled' : ''}`, 'Move up', '↑')}${btn(`data-pmove="${esc(it.id)}" data-dir="1" ${k === list.length - 1 ? 'disabled' : ''}`, 'Move down', '↓')}</div></div>`;
   const bar = its => { const cs = [...new Set(its.map(i => i.c))];
     return `<div class="slot-bar">${cs.map(c => { const mine = its.filter(i => i.c === c), d = mine.filter(isHandled).length;
