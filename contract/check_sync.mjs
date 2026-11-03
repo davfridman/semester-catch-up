@@ -170,7 +170,7 @@ function app(server) {
   const run = (code, vars = {}) => { Object.assign(page, vars); return vm.runInContext(code, page); };
   const store = new (run('Sync').MemoryStore)(server);
   const toasts = [];
-  run(`toast = m => __toasts.push(m); startSync({ id: 'u1', email: 'you@example.com' }); S.user = { id: 'u1', email: 'you@example.com' };
+  run(`dataEvents.message = toast = m => __toasts.push(m); startSync({ id: 'u1', email: 'you@example.com' }); S.user = { id: 'u1', email: 'you@example.com' };
        engine = new Sync.SyncEngine(__store, { shape });`, { __store: store, __toasts: toasts });
   return { run, store, toasts };
 }

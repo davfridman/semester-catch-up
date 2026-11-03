@@ -4,7 +4,7 @@
 #   sh contract/run_checks.sh
 set -e
 cd "$(dirname "$0")/.."
-for f in *.js features/*.js; do [ -f "$f" ] && node --check "$f"; done
+for f in *.js features/*.js contract/*.mjs; do node --check "$f"; done
 node contract/check_web.mjs
 node contract/check_sync.mjs
 python3 tools/contract_rules.py

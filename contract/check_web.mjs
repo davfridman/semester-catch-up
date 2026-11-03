@@ -1,7 +1,7 @@
 // Runs the shared rule cases (contract/fixtures/rules.json) against the web app's rules, at the fixture's fixed `now`.
 //   node contract/check_web.mjs
-// Twice: once against rules.js on its own, and once through app.js's own bindings (state, catchUp, weeks, dm,
-// planModel…), with both scripts loaded in order the way index.html loads them, so app.js can't drift from rules.js.
+// Twice: once against rules.js on its own, and once through the page's own bindings in models.js (state, catchUp,
+// weeks, dm, planModel…), with every script loaded in order the way index.html loads them, so the page can't drift from rules.js.
 // No dependencies and no network; exits 1 if any case fails.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +29,7 @@ function page(files) {
 const canon = v => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x));
 const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 1e-9;
 
-// The rules as one interface, either straight from rules.js or through app.js's bindings to its state S.
+// The rules as one interface, either straight from rules.js or through the page's bindings to its state S (models.js).
 function fromRules(ctx) {
   const R = vm.runInContext('Rules', ctx);
   return {
@@ -103,12 +103,13 @@ function check(name, rules) {
 
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const order = [...html.matchAll(/<script src="([^"]+)"/g)].map(x => x[1]);
-const inOrder = order.indexOf('rules.js') >= 0 && order.indexOf('rules.js') < order.indexOf('app.js');
-console.log(`index.html loads ${order.join(', ')}${inOrder ? '' : '  FAIL: rules.js must come before app.js'}`);
+// rules.js and sync.js come before the data layer, and the router (which starts the app) comes last.
+const at = f => order.indexOf(f), inOrder = at('rules.js') >= 0 && at('rules.js') < at('data.js') && at('sync.js') < at('data.js') && at('router.js') === order.length - 1;
+console.log(`index.html loads ${order.join(', ')}${inOrder ? '' : '  FAIL: rules.js and sync.js must come before data.js, and router.js last'}`);
 // The app's own scripts, in the page's order (config.js and vendor/ are stubbed by page()).
 const own = order.filter(f => f !== 'config.js' && !f.startsWith('vendor/'));
 
 let failed = inOrder ? 0 : 1;
 failed += check('rules.js', fromRules(page(['rules.js'])));
-failed += check('app.js', fromApp(page(own)));
+failed += check('the page (models.js)', fromApp(page(own)));
 process.exit(failed ? 1 : 0);
