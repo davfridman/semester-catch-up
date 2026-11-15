@@ -69,9 +69,12 @@ def hm(ms):
     return f'{ms // 3600000:02d}:{ms % 3600000 // 60000:02d}' if ms is not None else ''
 
 
-def groups(code, year, period):
-    """The semester's lecture and tutorial groups: [{type, group, day (0 = Sunday), time, end, room, teacher}]."""
+def groups(code, year, period, labs=False):
+    """The semester's lecture and tutorial groups: [{type, group, day (0 = Sunday), time, end, room, teacher}].
+    With labs=True, lab groups (מעבדה) come too, as type 'Lab' (semester_setup.py reads them for a student's own slot)."""
     kinds = {'1': 'Lecture', '2': 'Tutorial'}  # שעור, תרגיל
+    if labs:
+        kinds['7'] = 'Lab'
     out = []
     for c in get(f'/courses/code/{code}?year={year}'):
         for g in get(f'/courses/groups-with-sessions?year={year}&courseIds={c["id"]}').get(str(c['id']), []):

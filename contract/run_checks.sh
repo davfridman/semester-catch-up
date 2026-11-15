@@ -10,4 +10,6 @@ node contract/check_sync.mjs
 python3 tools/contract_rules.py
 python3 tools/contract_check.py --self-test
 python3 tools/contract_check.py contract/fixtures/docs.json
+python3 tools/semester_setup.py --self-test
+python3 -m py_compile tools/run_all.py tools/semester_setup.py tools/moodle_sync.py tools/supabase_load.py tools/shnaton.py
 echo "All contract checks pass."

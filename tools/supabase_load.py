@@ -20,8 +20,13 @@ def load_cfg():
         return {'url': os.environ['SUPABASE_URL'], 'service_key': '', 'email': os.environ.get('SUPABASE_EMAIL', ''),
                 'user_id': os.environ['SUPABASE_USER_ID']}
     if os.environ.get('SUPABASE_SERVICE_KEY'):
-        return {'url': os.environ['SUPABASE_URL'], 'service_key': os.environ['SUPABASE_SERVICE_KEY'], 'email': os.environ['SUPABASE_EMAIL']}
-    return json.load(open(CFG))
+        cfg = {'url': os.environ['SUPABASE_URL'], 'service_key': os.environ['SUPABASE_SERVICE_KEY'], 'email': os.environ.get('SUPABASE_EMAIL', '')}
+    else:
+        cfg = json.load(open(CFG))
+    # run_all.py runs each tool once per student and names the student here.
+    if os.environ.get('SUPABASE_USER_ID'):
+        cfg['user_id'] = os.environ['SUPABASE_USER_ID']
+    return cfg
 
 
 def req(method, url, key, body=None, extra=None):

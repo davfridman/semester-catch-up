@@ -310,7 +310,8 @@ def main():
         events = [{'cid': by_moodle.get(c), 'SUMMARY': name, 'UID': f'{eid}@{host}', '_dt': dt.datetime.fromtimestamp(ts).astimezone()}
                   for eid, name, c, ts in moodle['calendar'] if ts]
     else:
-        feed = os.environ.get('MOODLE_ICS_URL') or (open(ICS_URL_FILE).read().strip() if os.path.exists(ICS_URL_FILE) else '')
+        # The private calendar link belongs to one student; run_all.py turns it off for everyone else.
+        feed = '' if os.environ.get('SEMESTER_NO_CALENDAR_LINK') else (os.environ.get('MOODLE_ICS_URL') or (open(ICS_URL_FILE).read().strip() if os.path.exists(ICS_URL_FILE) else ''))
         ics, err = None, 'no Moodle connection and no calendar link'
         for attempt in range(4 if feed else 0):  # HUJI's server sometimes resets connections; retry, then fall back to curl
             try:
