@@ -211,8 +211,10 @@ def build(enrolled, courses, items, prefs, cal, today, write_note):
     return new_courses, new_items, add_prefs, summary
 
 
-def gather(token, year, period):
-    """The student's Moodle enrolments with their groups, plus each course's Shnaton groups and exams."""
+def gather(token, year, period, have_moodle_ids=()):
+    """The student's Moodle enrolments with their groups, plus each course's Shnaton groups and exams. Courses the
+    app already has (`have_moodle_ids`) are listed but not looked up, so an hourly run for a student whose semester
+    is built costs one Moodle call."""
     import moodle_api as m
     import shnaton as s
     m.ALLOWED.add('core_group_get_course_user_groups')
@@ -220,6 +222,10 @@ def gather(token, year, period):
     out = []
     for c in m.ws(token, 'core_enrol_get_users_courses', userid=me):
         e = {'id': c['id'], 'idnumber': c.get('idnumber') or '', 'fullname': c.get('fullname') or '', 'site': m.SITE, 'groups': [], 'shnaton': [], 'exams': {}}
+        out.append(e)
+        if str(c['id']) in have_moodle_ids:
+            continue
+        print(f'  looking up {names(e["fullname"])[0]}', flush=True)
         try:
             e['groups'] = [g.get('name') or '' for g in m.ws(token, 'core_group_get_course_user_groups', courseid=c['id'], userid=me).get('groups', [])]
         except RuntimeError:
@@ -231,7 +237,6 @@ def gather(token, year, period):
                 e['exams'] = s.exams(code, year, period)
             except Exception as err:  # the Shnaton didn't answer: leave this course for the next run
                 e['failed'] = str(err)
-        out.append(e)
     return out
 
 
@@ -312,7 +317,12 @@ def main():
         print(f"Semester setup: HUJI's calendar for {year}, semester {'AB'[period - 1]} isn't in this tool yet, so nothing was added.")
         return
     try:
-        enrolled = gather(token, year, period)
+        have = set()
+        for c in courses.values():
+            mm = re.search(r'[?&]id=(\d+)', c.get('moodle') or '')
+            if mm:
+                have.add(mm.group(1))
+        enrolled = gather(token, year, period, have)
     except m.TokenError:
         print('Semester setup: the Moodle connection has expired. Reconnect Moodle in the app.')
         return

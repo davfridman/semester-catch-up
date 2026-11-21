@@ -11,7 +11,7 @@ Each student's run is separate: one failing doesn't stop the others. The private
 to the account in SUPABASE_EMAIL and is only used for that account. Students are named by the last 4 characters of
 their id, never by email. Credentials as in supabase_load.py.
 """
-import argparse, os, subprocess, sys, tempfile
+import argparse, os, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,22 +33,30 @@ def students(cfg):
     return sorted(set(ids), key=lambda u: (u != owner, u)), owner
 
 
+# How long each tool may take for one student, in seconds. Together they stay well inside the cloud job's limit,
+# so one slow server (HUJI's Moodle at night, the Shnaton) can't stop the sync for everyone.
+BUDGET = {'semester_setup.py': 150, 'moodle_api.py': 240, 'moodle_sync.py': 120, 'shnaton.py': 120}
+
+
 def run(tool, env, *args, capture=None):
-    """Runs one tool for one student. Returns True when it finished without an error."""
-    cmd = [sys.executable, os.path.join(HERE, tool), *args]
+    """Runs one tool for one student, within its time budget. Returns True when it finished without an error."""
+    cmd = [sys.executable, '-u', os.path.join(HERE, tool), *args]
+    started = time.time()
     try:
         if capture:
             with open(capture, 'w') as out:
-                r = subprocess.run(cmd, env=env, stdout=out, stderr=subprocess.PIPE, text=True, timeout=540)
+                r = subprocess.run(cmd, env=env, stdout=out, stderr=subprocess.PIPE, text=True, timeout=BUDGET.get(tool, 120))
         else:
-            r = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=540)
+            r = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=BUDGET.get(tool, 120))
             print(''.join('  ' + line + '\n' for line in (r.stdout or '').splitlines()), end='')
         if r.returncode != 0:
             tail = (r.stderr or '').strip().splitlines()[-1:] if capture else []
-            print(f'  ! {tool} failed' + (': ' + tail[0] if tail else ''))
+            print(f'  ! {tool} failed' + (': ' + tail[0] if tail else ''), flush=True)
+        print(f'  ({tool}: {time.time() - started:.0f} s)', flush=True)
         return r.returncode == 0
-    except subprocess.TimeoutExpired:
-        print(f'  ! {tool} took too long and was stopped')
+    except subprocess.TimeoutExpired as e:
+        print(''.join('  ' + line + '\n' for line in (e.stdout or b'').decode(errors='replace').splitlines()) if isinstance(e.stdout, bytes) else (e.stdout or ''), end='')
+        print(f'  ! {tool} took longer than {BUDGET.get(tool, 120)} s and was stopped; the next hourly run tries again', flush=True)
         return False
 
 
@@ -64,7 +72,7 @@ def main():
     dry = ['--dry-run'] if a.dry_run else []
     failed = 0
     for n, uid in enumerate(ids, 1):
-        print(f'Student {n} of {len(ids)} (…{uid[-4:]})' + (', the owner' if uid == owner else ''))
+        print(f'Student {n} of {len(ids)} (…{uid[-4:]})' + (', the owner' if uid == owner else ''), flush=True)
         env = dict(os.environ, SUPABASE_USER_ID=uid)
         if uid != owner:
             env.pop('MOODLE_ICS_URL', None)
