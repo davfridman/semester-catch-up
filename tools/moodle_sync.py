@@ -125,6 +125,12 @@ def ics_base(summary):
     return s, 'due'
 
 
+def course_name(fullname):
+    """A Moodle course's name for people: English when it has one, without the code and Moodle's language tags."""
+    from semester_setup import names
+    return names(fullname)[0] or fullname
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--moodle')
@@ -144,6 +150,10 @@ def main():
         if c.get('code'):
             by_code[str(c['code']).split('_')[0]] = cid
     changed, summary, updates = {}, [], {}
+    prefs_now = next((r['data'] for r in rows if r['col'] == 'settings' and r['id'] == 'prefs'), {}) or {}
+    # An account's first Moodle sync brings everything at once: its starting point, not news. Its feed entries are
+    # kept as already seen, so a new student doesn't open the app to dozens of unread ones.
+    first_sync = not prefs_now.get('lastMoodleSync')
 
     def put(it, why):
         cur = items.get(it['id'])
@@ -163,14 +173,13 @@ def main():
         kind = ('recording' if 'recording' in why else 'submitted' if 'marked submitted' in why
                 else 'new' if why.startswith('+') else 'changed')
         updates[it['id']] = {'id': f"u-{STAMP}-{it['id']}", 'kind': kind, 'text': why[2:], 'item': it['id'],
-                             'course': it.get('c', ''), 'at': NOW, 'seen': False, 'source': 'sync'}
+                             'course': it.get('c', ''), 'at': NOW, 'seen': first_sync, 'source': 'sync'}
 
     def next_n(cid, typ):
         return 1 + max([x.get('n', 0) for x in items.values() if x['c'] == cid and x['type'] == typ] or [0])
 
     moodle = json.load(open(a.moodle)) if a.moodle and os.path.exists(a.moodle) else None
     if moodle and moodle.get('error'):
-        prefs_now = next((r['data'] for r in rows if r['col'] == 'settings' and r['id'] == 'prefs'), {}) or {}
         last = prefs_now.get('lastMoodleSync') or ''
         try:
             stale = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(last.replace('Z', '+00:00'))).total_seconds() > 12 * 3600
@@ -202,7 +211,7 @@ def main():
             if moodle.get('source') == 'api' and not moodle.get('activities', {}).get(mid):
                 continue
             if mid not in by_moodle:
-                summary.append(f'! Moodle course not in the app yet: {name}')
+                summary.append(f'! Moodle course not in the app yet: {course_name(name)}')
         status = moodle.get('status', {})
         for mid, acts in moodle.get('activities', {}).items():
             cid = by_moodle.get(mid)
@@ -299,7 +308,7 @@ def main():
                     continue
                 updates[uid_] = {'id': uid_, 'kind': 'announcement', 'text': f'{courses[cid]["short"]}: {subject}', 'detail': body,
                                  'link': link, 'course': cid, 'at': dt.datetime.fromtimestamp(ts).astimezone().isoformat(timespec='seconds'),
-                                 'seen': False, 'source': 'moodle'}
+                                 'seen': first_sync, 'source': 'moodle'}
                 summary.append(f'+ {courses[cid]["short"]}: announcement "{subject}"')
 
     # The Moodle calendar: deadlines and opening dates the activities didn't cover. Through the app key when Moodle

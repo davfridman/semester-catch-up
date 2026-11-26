@@ -18,7 +18,7 @@ regular sync (moodle_sync.py).
 It only ever adds. A course the app already has is left exactly as it is, so running it again changes nothing, and a
 course joined mid-semester appears on the next run. Only reads from HUJI. Credentials as in supabase_load.py.
 """
-import argparse, datetime as dt, json, os, re, sys
+import argparse, datetime as dt, html, json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -53,8 +53,9 @@ def registered(group_names):
 
 
 def names(fullname):
-    """'67521_1 - {mlang he}מודלים{mlang}{mlang en}Models{mlang}' -> ('Models', 'מודלים'); plain names fill both."""
-    rest = re.sub(r'^\s*[\d_]+\s*-\s*', '', fullname or '').strip()
+    """'67521_1 - {mlang he}מודלים{mlang}{mlang en}Models{mlang}' -> ('Models', 'מודלים'); plain names fill both.
+    Moodle's HTML entities ("&amp;") come out as the characters."""
+    rest = re.sub(r'^\s*[\d_]+\s*-\s*', '', html.unescape(fullname or '')).strip()
     en = re.search(r'\{mlang en\}(.*?)\{mlang\}', rest, re.S)
     he = re.search(r'\{mlang he\}(.*?)\{mlang\}', rest, re.S)
     plain = re.sub(r'\{mlang[^}]*\}', '', rest).strip()
@@ -157,7 +158,9 @@ def exam_items(cid, code, found, today, write_note):
 def build(enrolled, courses, items, prefs, cal, today, write_note):
     """What to add for one student. Pure: everything it needs comes in.
     enrolled: [{'id': Moodle course id, 'idnumber', 'fullname', 'groups': [Moodle group names],
-                'shnaton': [groups()], 'exams': exams()}]
+                'shnaton': [groups()], 'exams': exams(), 'otherSemester': 'B' when only the other semester teaches it}]
+    A course the Shnaton gives no hours in either semester is an online course: it's added without lectures, and its
+    tasks come from the sync. One taught only in the other semester waits for that semester.
     -> (new courses, new items, prefs to add, summary lines)"""
     have_moodle, have_code = set(), set()
     for c in courses.values():
@@ -178,9 +181,13 @@ def build(enrolled, courses, items, prefs, cal, today, write_note):
         name = en or he
         mine = registered(e.get('groups') or [])
         groups = e.get('shnaton') or []
-        if not code or not (groups or mine):
-            summary.append(f'! Skipped a Moodle course that is not a class this semester: {name}')
+        if not code:
+            summary.append(f'  Skipped {name}: not a course in the Shnaton.')
             continue
+        if not groups and e.get('otherSemester'):
+            summary.append(f'  {name}: taught in semester {e["otherSemester"]}, so it\'s added when that semester starts.')
+            continue
+        online = not groups
         meetings = meetings_for(mine, groups)
         short = short_name(name, taken); taken.add(short)
         order += 1
@@ -201,7 +208,9 @@ def build(enrolled, courses, items, prefs, cal, today, write_note):
         if exams:
             parts.append(f'{len(exams)} exam dates')
         summary.append(f'+ {short}: {name}' + (' (' + ', '.join(parts) + ')' if parts else ''))
-        if mine and not meetings:
+        if online:
+            summary.append(f'  {short}: an online course with no weekly hours, so it has no lectures; its tasks come from Moodle.')
+        elif mine and not meetings:
             summary.append(f'! {short}: your groups have no weekly hours in the Shnaton, so no lectures were added. Set the day and time on the course page.')
         if not mine and groups:
             summary.append(f'! {short}: Moodle doesn\'t say which group you\'re in. Pick your lecture and tutorial on the course page.')
@@ -235,6 +244,8 @@ def gather(token, year, period, have_moodle_ids=()):
             try:
                 e['shnaton'] = s.groups(code, year, period, labs=True)
                 e['exams'] = s.exams(code, year, period)
+                if not e['shnaton'] and s.groups(code, year, 3 - period, labs=True):
+                    e['otherSemester'] = 'AB'[2 - period]
             except Exception as err:  # the Shnaton didn't answer: leave this course for the next run
                 e['failed'] = str(err)
     return out
@@ -258,11 +269,16 @@ def self_test():
          'shnaton': [g('Lecture', '1', 4, '12:00', '13:45'), g('Lecture', '1', 4, '14:00', '14:45')], 'exams': {}},
         {'id': 12, 'idnumber': '', 'site': 'https://m', 'fullname': 'Library guide', 'groups': [], 'shnaton': [], 'exams': {}},
         {'id': 13, 'idnumber': '67577', 'site': 'https://m', 'fullname': '67577 - Machine Learning', 'groups': ['67577-01-שעור'], 'shnaton': [], 'exams': {}},
+        {'id': 15, 'idnumber': '76408', 'site': 'https://m', 'fullname': '76408 - {mlang he}ספרייה{mlang}{mlang en}Library Resources &amp; Skills{mlang}',
+         'groups': [], 'shnaton': [], 'exams': {}},
+        {'id': 16, 'idnumber': '57108_1', 'site': 'https://m', 'fullname': '57108_1 - Introduction to Economics II', 'groups': ['57108-01-שעור'],
+         'shnaton': [], 'exams': {}, 'otherSemester': 'B'},
     ]
     have = {'m-13': {'id': 'm-13', 'short': 'ML', 'code': '67577', 'order': 4, 'moodle': 'https://m/course/view.php?id=13'}}
     cs, its, prefs, summary = build(enrolled, have, {}, {}, cal, '2026-11-10', note)
-    assert [c['id'] for c in cs] == ['m-14', 'm-10', 'm-11'], [c['id'] for c in cs]
-    dist, comp, net = cs
+    assert [c['id'] for c in cs] == ['m-14', 'm-10', 'm-11', 'm-15'], [c['id'] for c in cs]
+    dist, comp, net, online = cs
+    assert online['name'] == 'Library Resources & Skills' and online['meetings'] == [] and not [i for i in its if i['c'] == 'm-15'], online  # online: no lectures, tasks come from the sync
     assert dist['short'] == 'RDS' and dist['meetings'] == [{'id': 'L1', 'day': 4, 'time': '12:00', 'type': 'Lecture', 'duration': 165}], dist
     assert comp['name'] == 'Computational Models, Computability and Complexity' and comp['nameHe'] == 'מודלים חישוביים' and comp['code'] == '67521'
     assert comp['short'] == 'CMCC' and net['short'] == 'CN' and (comp['order'], net['order']) == (6, 7), (comp['short'], net['short'])
@@ -280,7 +296,8 @@ def self_test():
     assert set(exams) == {'x-10-final', 'x-10-final-b', 'x-10-q2'}, set(exams)  # q1 is over
     assert exams['x-10-final-b']['optional'] is True and exams['x-10-final']['rooms'] == ['A'] and exams['x-10-q2']['title'] == 'Midterm 2'
     assert prefs == {'semStart': cal['start'], 'semEnd': cal['end'], 'breaks': cal['breaks']}
-    assert any(l.startswith('! Skipped') for l in summary) and any('Pick your lecture' in l for l in summary)
+    assert any('Pick your lecture' in l for l in summary) and any('semester B' in l for l in summary)
+    assert not any(l.startswith('!') and ('Library guide' in l or 'Economics' in l or 'online' in l) for l in summary), summary  # no daily warnings
     again = dict(have, **{c['id']: c for c in cs})
     assert build(enrolled, again, {}, {'semStart': 'x'}, cal, '2026-11-10', note)[:3] == ([], [], {})  # running again adds nothing
     print(f'Semester setup: self-test ok ({len(its)} items for {len(cs)} courses)')
